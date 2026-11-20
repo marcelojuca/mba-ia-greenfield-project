@@ -5,6 +5,7 @@ import { Queue } from 'bullmq';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
+import { StorageService } from '../src/storage/storage.service';
 import { cleanAllTables } from '../src/test/create-test-data-source';
 import {
   presignedRequest,
@@ -15,6 +16,7 @@ import { VIDEO_PROCESSING_QUEUE } from '../src/videos/videos.constants';
 import {
   createConfirmedUser,
   createE2eApp,
+  deleteStoredVideoObjects,
   type TestUser,
 } from './helpers/e2e-app';
 
@@ -32,11 +34,13 @@ describe('Videos (e2e)', () => {
 
   afterAll(async () => {
     await queue.obliterate({ force: true });
+    await deleteStoredVideoObjects(app);
     await cleanAllTables(dataSource);
     await app.close();
   });
 
   beforeEach(async () => {
+    await deleteStoredVideoObjects(app);
     await cleanAllTables(dataSource);
     await queue.obliterate({ force: true });
     owner = await createConfirmedUser(app);
@@ -189,6 +193,201 @@ describe('Videos (e2e)', () => {
       await request(app.getHttpServer())
         .post('/videos/abcdefghijk/upload/complete')
         .expect(401);
+    });
+  });
+  describe('reading, streaming and downloading', () => {
+    const FILE = randomBytes(4096);
+
+    /** Uploads through the API, then applies the worker's end state. */
+    async function readyVideo(user: TestUser): Promise<string> {
+      const start = await startUpload(user, {
+        fileName: 'Viagem ao Rio.mp4',
+        fileSize: FILE.length,
+        contentType: 'video/mp4',
+      }).expect(201);
+      await uploadFileToParts(
+        start.body.upload.parts,
+        start.body.upload.partSize,
+        FILE,
+      );
+      await request(app.getHttpServer())
+        .post(`/videos/${start.body.id}/upload/complete`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .expect(202);
+
+      const repo = dataSource.getRepository(Video);
+      const video = await repo.findOneByOrFail({ public_id: start.body.id });
+      const thumbnailKey = `thumbnails/${video.id}.jpg`;
+      await app
+        .get(StorageService)
+        .putObject(thumbnailKey, Buffer.from([0xff, 0xd8, 0xff]), 'image/jpeg');
+      await repo.update(
+        { id: video.id },
+        {
+          status: VideoStatus.READY,
+          duration_seconds: 3,
+          metadata: {
+            width: 320,
+            height: 240,
+            videoCodec: 'h264',
+            audioCodec: 'aac',
+            formatName: 'mp4',
+            bitRate: 1000,
+            frameRate: 25,
+          },
+          thumbnail_key: thumbnailKey,
+          processed_at: new Date(),
+        },
+      );
+      return start.body.id as string;
+    }
+
+    async function draftVideo(user: TestUser): Promise<string> {
+      const res = await startUpload(user).expect(201);
+      return res.body.id as string;
+    }
+
+    it('GET /videos/:id returns a ready video to anonymous users', async () => {
+      const id = await readyVideo(owner);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${id}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        id,
+        status: 'ready',
+        durationSeconds: 3,
+        metadata: { width: 320, height: 240 },
+        processingError: null,
+      });
+      expect(res.body.url).toMatch(new RegExp(`/videos/${id}$`));
+      expect(res.body.streamUrl).toBe(`${res.body.url}/stream`);
+      expect(res.body.downloadUrl).toBe(`${res.body.url}/download`);
+      expect(res.body.thumbnailUrl).toBe(`${res.body.url}/thumbnail`);
+    });
+
+    it('GET /videos/:id hides drafts from anonymous users but not from the owner', async () => {
+      const id = await draftVideo(owner);
+
+      const anonymous = await request(app.getHttpServer())
+        .get(`/videos/${id}`)
+        .expect(404);
+      const asOwner = await request(app.getHttpServer())
+        .get(`/videos/${id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .expect(200);
+
+      expect(anonymous.body.error).toBe('VIDEO_NOT_FOUND');
+      expect(asOwner.body).toMatchObject({
+        id,
+        status: 'draft',
+        streamUrl: null,
+      });
+    });
+
+    it('GET /videos/:id hides drafts from other authenticated users', async () => {
+      const id = await draftVideo(owner);
+      const other = await createConfirmedUser(app);
+
+      await request(app.getHttpServer())
+        .get(`/videos/${id}`)
+        .set('Authorization', `Bearer ${other.accessToken}`)
+        .expect(404);
+    });
+
+    it('GET /videos/:id/stream redirects to storage, which serves byte ranges', async () => {
+      const id = await readyVideo(owner);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${id}/stream`)
+        .expect(302);
+      const media = await presignedRequest(res.headers.location, {
+        headers: { range: 'bytes=0-1023' },
+      });
+
+      expect(res.headers.location).toContain('X-Amz-Signature');
+      expect(media.status).toBe(206);
+      expect(media.body.length).toBe(1024);
+      expect(media.body.equals(FILE.subarray(0, 1024))).toBe(true);
+      expect(media.headers['content-type']).toBe('video/mp4');
+    });
+
+    it('GET /videos/:id/download redirects to an attachment with the original name', async () => {
+      const id = await readyVideo(owner);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${id}/download`)
+        .expect(302);
+      const file = await presignedRequest(res.headers.location);
+
+      expect(file.status).toBe(200);
+      expect(file.headers['content-disposition']).toContain(
+        'attachment; filename="Viagem ao Rio.mp4"',
+      );
+      expect(file.body.equals(FILE)).toBe(true);
+    });
+
+    it('GET /videos/:id/thumbnail redirects to the JPEG', async () => {
+      const id = await readyVideo(owner);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${id}/thumbnail`)
+        .expect(302);
+      const image = await presignedRequest(res.headers.location);
+
+      expect(image.status).toBe(200);
+      expect(image.headers['content-type']).toBe('image/jpeg');
+    });
+
+    it('GET /videos/:id/stream returns 409 VIDEO_NOT_READY to the owner of a processing video', async () => {
+      const start = await startUpload(owner, {
+        fileName: 'clip.mp4',
+        fileSize: 512,
+        contentType: 'video/mp4',
+      }).expect(201);
+      await uploadFileToParts(
+        start.body.upload.parts,
+        start.body.upload.partSize,
+        randomBytes(512),
+      );
+      await request(app.getHttpServer())
+        .post(`/videos/${start.body.id}/upload/complete`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .expect(202);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${start.body.id}/stream`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .expect(409);
+
+      expect(res.body.error).toBe('VIDEO_NOT_READY');
+    });
+
+    it('GET /videos/:id/download returns 404 for anonymous users of a draft', async () => {
+      const id = await draftVideo(owner);
+
+      await request(app.getHttpServer())
+        .get(`/videos/${id}/download`)
+        .expect(404);
+    });
+
+    it('GET /videos/:id returns 404 VIDEO_NOT_FOUND for an unknown id', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/videos/unknownid00')
+        .expect(404);
+
+      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+    });
+
+    it('does not rate-limit playback requests', async () => {
+      const id = await readyVideo(owner);
+
+      for (let i = 0; i < 15; i++) {
+        await request(app.getHttpServer())
+          .get(`/videos/${id}/stream`)
+          .expect(302);
+      }
     });
   });
 });

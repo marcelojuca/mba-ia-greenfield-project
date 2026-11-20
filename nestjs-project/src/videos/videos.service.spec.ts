@@ -13,9 +13,10 @@ import {
   UploadSizeMismatchException,
   VideoNotDraftException,
   VideoNotFoundException,
+  VideoNotReadyException,
   VideoTooLargeException,
 } from './videos.exceptions';
-import { VideosService } from './videos.service';
+import { attachmentDisposition, VideosService } from './videos.service';
 
 const MIB = 1024 ** 2;
 const USER_ID = 'user-1';
@@ -358,5 +359,138 @@ describe('VideosService', () => {
       ).rejects.toBeInstanceOf(VideoNotDraftException);
       expect(producer.enqueue).not.toHaveBeenCalled();
     });
+  });
+  describe('findForReader', () => {
+    function video(status: VideoStatus): Video {
+      return {
+        id: 'video-1',
+        public_id: 'abcdefghijk',
+        status,
+        channel: { user_id: USER_ID },
+      } as Video;
+    }
+
+    it('should let anyone read a ready video', async () => {
+      const { service, videoRepository } = await buildVideosService();
+      videoRepository.findOne.mockResolvedValue(video(VideoStatus.READY));
+
+      const result = await service.findForReader('abcdefghijk');
+
+      expect(result.isOwner).toBe(false);
+    });
+
+    it.each([VideoStatus.DRAFT, VideoStatus.PROCESSING, VideoStatus.FAILED])(
+      'should hide a %s video from non-owners',
+      async (status) => {
+        const { service, videoRepository } = await buildVideosService();
+        videoRepository.findOne.mockResolvedValue(video(status));
+
+        await expect(
+          service.findForReader('abcdefghijk', 'someone-else'),
+        ).rejects.toBeInstanceOf(VideoNotFoundException);
+      },
+    );
+
+    it('should let the owner read a non-ready video', async () => {
+      const { service, videoRepository } = await buildVideosService();
+      videoRepository.findOne.mockResolvedValue(video(VideoStatus.FAILED));
+
+      const result = await service.findForReader('abcdefghijk', USER_ID);
+
+      expect(result.isOwner).toBe(true);
+    });
+
+    it('should raise VIDEO_NOT_FOUND for an unknown id', async () => {
+      const { service, videoRepository } = await buildVideosService();
+      videoRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.findForReader('nope')).rejects.toBeInstanceOf(
+        VideoNotFoundException,
+      );
+    });
+  });
+
+  describe('getPlaybackUrl', () => {
+    const READY = {
+      id: 'video-1',
+      public_id: 'abcdefghijk',
+      status: VideoStatus.READY,
+      storage_key: 'videos/video-1/source',
+      thumbnail_key: 'thumbnails/video-1.jpg',
+      mime_type: 'video/mp4',
+      original_filename: 'Trip.mp4',
+      channel: { user_id: USER_ID },
+    } as Video;
+
+    it('should presign the source inline for streaming', async () => {
+      const { service, videoRepository, storageService } =
+        await buildVideosService();
+      videoRepository.findOne.mockResolvedValue(READY);
+      storageService.presignGetObject.mockResolvedValue('https://signed');
+
+      await expect(
+        service.getPlaybackUrl('abcdefghijk', 'stream'),
+      ).resolves.toBe('https://signed');
+      expect(storageService.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/source',
+        { contentType: 'video/mp4' },
+      );
+    });
+
+    it('should presign the source as an attachment for downloads', async () => {
+      const { service, videoRepository, storageService } =
+        await buildVideosService();
+      videoRepository.findOne.mockResolvedValue(READY);
+
+      await service.getPlaybackUrl('abcdefghijk', 'download');
+
+      expect(storageService.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/source',
+        expect.objectContaining({
+          contentDisposition: expect.stringContaining(
+            'attachment; filename="Trip.mp4"',
+          ),
+        }),
+      );
+    });
+
+    it('should presign the thumbnail key for thumbnails', async () => {
+      const { service, videoRepository, storageService } =
+        await buildVideosService();
+      videoRepository.findOne.mockResolvedValue(READY);
+
+      await service.getPlaybackUrl('abcdefghijk', 'thumbnail');
+
+      expect(storageService.presignGetObject).toHaveBeenCalledWith(
+        'thumbnails/video-1.jpg',
+        { contentType: 'image/jpeg' },
+      );
+    });
+
+    it('should tell the owner a non-ready video is not ready yet', async () => {
+      const { service, videoRepository } = await buildVideosService();
+      videoRepository.findOne.mockResolvedValue({
+        ...READY,
+        status: VideoStatus.PROCESSING,
+      });
+
+      await expect(
+        service.getPlaybackUrl('abcdefghijk', 'stream', USER_ID),
+      ).rejects.toBeInstanceOf(VideoNotReadyException);
+    });
+  });
+});
+
+describe('attachmentDisposition', () => {
+  it('should keep plain ASCII names', () => {
+    expect(attachmentDisposition('clip.mp4')).toBe(
+      `attachment; filename="clip.mp4"; filename*=UTF-8''clip.mp4`,
+    );
+  });
+
+  it('should escape quotes and non-ASCII characters', () => {
+    expect(attachmentDisposition('Viagem à "Rio" (1).mp4')).toBe(
+      `attachment; filename="Viagem _ _Rio_ (1).mp4"; filename*=UTF-8''Viagem%20%C3%A0%20%22Rio%22%20%281%29.mp4`,
+    );
   });
 });

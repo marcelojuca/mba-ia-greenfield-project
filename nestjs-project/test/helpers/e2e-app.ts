@@ -4,10 +4,13 @@ import { Test } from '@nestjs/testing';
 import { ThrottlerStorage, ThrottlerStorageService } from '@nestjs/throttler';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module';
 import { DomainExceptionFilter } from '../../src/common/filters/domain-exception.filter';
 import { ValidationExceptionFilter } from '../../src/common/filters/validation-exception.filter';
 import { MailService } from '../../src/mail/mail.service';
+import { StorageService } from '../../src/storage/storage.service';
+import { Video } from '../../src/videos/entities/video.entity';
 
 /** Boots AppModule with the same global pipes/filters as `main.ts`. */
 export async function createE2eApp(): Promise<INestApplication<App>> {
@@ -72,4 +75,16 @@ export async function createConfirmedUser(
     .expect(200);
 
   return { email, accessToken: login.body.access_token };
+}
+
+/** Deletes the stored source/thumbnail objects of every video row. */
+export async function deleteStoredVideoObjects(
+  app: INestApplication<App>,
+): Promise<void> {
+  const storage = app.get(StorageService);
+  const videos = await app.get(DataSource).getRepository(Video).find();
+  for (const video of videos) {
+    await storage.deleteObject(video.storage_key);
+    if (video.thumbnail_key) await storage.deleteObject(video.thumbnail_key);
+  }
 }

@@ -22,10 +22,12 @@ import {
   UploadSizeMismatchException,
   VideoNotDraftException,
   VideoNotFoundException,
+  VideoNotReadyException,
   VideoTooLargeException,
 } from './videos.exceptions';
 import {
   PUBLIC_ID_MAX_RETRIES,
+  THUMBNAIL_CONTENT_TYPE,
   VIDEO_STORAGE_KEYS,
   VIDEO_TITLE_MAX_LENGTH,
 } from './videos.constants';
@@ -43,12 +45,33 @@ export interface ProcessingResult {
   thumbnailKey: string;
 }
 
+export type PlaybackKind = 'stream' | 'download' | 'thumbnail';
+
+export interface ReadableVideo {
+  video: Video;
+  isOwner: boolean;
+}
+
 export interface UploadSession {
   video: Video;
   partSize: number;
   partCount: number;
   expiresAt: Date;
   parts: { partNumber: number; url: string }[];
+}
+
+/**
+ * RFC 6266 attachment header: ASCII fallback plus UTF-8 `filename*` so names
+ * with quotes or accents survive (e.g. `Viagem ao Rio "final".mp4`).
+ */
+export function attachmentDisposition(fileName: string): string {
+  const ascii = fileName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  // RFC 5987 attr-char excludes ' ( ) * which encodeURIComponent leaves raw.
+  const encoded = encodeURIComponent(fileName).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
 }
 
 @Injectable()
@@ -156,6 +179,58 @@ export class VideosService {
     video.status = VideoStatus.PROCESSING;
     video.upload_id = null;
     return video;
+  }
+
+  /**
+   * Phase 03 read policy (phase-03-videos/TD-07 revision): `ready` videos are
+   * readable by anyone holding the unique URL; other statuses only by the
+   * owner. Everyone else gets VIDEO_NOT_FOUND (existence is not leaked).
+   */
+  async findForReader(
+    publicId: string,
+    requesterUserId?: string,
+  ): Promise<ReadableVideo> {
+    const video = await this.videoRepository.findOne({
+      where: { public_id: publicId },
+      relations: { channel: true },
+    });
+    if (!video) throw new VideoNotFoundException();
+    const isOwner =
+      requesterUserId !== undefined &&
+      video.channel.user_id === requesterUserId;
+    if (video.status !== VideoStatus.READY && !isOwner) {
+      throw new VideoNotFoundException();
+    }
+    return { video, isOwner };
+  }
+
+  /**
+   * Short-lived presigned storage URL for playback, download or thumbnail
+   * (phase-03-videos/TD-07). Storage serves `Range` → `206` natively.
+   */
+  async getPlaybackUrl(
+    publicId: string,
+    kind: PlaybackKind,
+    requesterUserId?: string,
+  ): Promise<string> {
+    const { video } = await this.findForReader(publicId, requesterUserId);
+    if (video.status !== VideoStatus.READY) throw new VideoNotReadyException();
+
+    switch (kind) {
+      case 'stream':
+        return this.storageService.presignGetObject(video.storage_key, {
+          contentType: video.mime_type,
+        });
+      case 'download':
+        return this.storageService.presignGetObject(video.storage_key, {
+          contentType: video.mime_type,
+          contentDisposition: attachmentDisposition(video.original_filename),
+        });
+      case 'thumbnail':
+        return this.storageService.presignGetObject(video.thumbnail_key!, {
+          contentType: THUMBNAIL_CONTENT_TYPE,
+        });
+    }
   }
 
   async findById(id: string): Promise<Video | null> {

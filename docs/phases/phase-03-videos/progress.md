@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 12/15 completed
+**SIs:** 13/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -98,9 +98,13 @@
   - Running the full e2e suite exposed that `npm run test:e2e` was NOT serialized (contrary to CLAUDE.md: suites ran in parallel workers and hit FK violations). Added `maxWorkers: 1` to both Jest configs so plain `npm test` / `npm run test:e2e` are serial by construction.
 
 ### SI-03.13 — Read, Stream, Download and Thumbnail Endpoints
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 22 SI tests passing (videos.service.spec: 12 new unit cases for read policy, playback URLs and RFC 6266 disposition; videos.e2e-spec: 10 new — 200/404 per status and requester, stream 302 → storage 206 with exact bytes, download attachment + identical bytes, thumbnail JPEG, 409 VIDEO_NOT_READY, no throttling on playback); videos e2e 21/21
+- **Observations:** 
+  - Download `Content-Disposition` follows RFC 6266/5987 (`filename` ASCII fallback + UTF-8 `filename*`), so names with accents or quotes survive.
+  - Playback endpoints use `@Redirect(undefined, 302)` returning `{ url }`; OpenAPI documents the 302 + `Location` header via a shared `PlaybackResponses` decorator.
+  - Ready-state e2e cases arrange the worker end state directly (DB update + thumbnail object); the real worker path is proven in SI-03.14.
+  - Videos e2e now deletes the stored objects of every video before wiping tables (`deleteStoredVideoObjects`).
 
 ### SI-03.14 — End-to-End Upload → Processing → Streaming Pipeline
 - **Status:** pending
