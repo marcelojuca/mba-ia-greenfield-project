@@ -31,12 +31,14 @@ describe('Database migrations (integration)', () => {
 
     await dataSource.initialize();
 
-    await Promise.all([
-      ...MANAGED_TABLES.map((table) =>
-        dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`),
-      ),
-      dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
-    ]);
+    // Reset the whole schema: dropping only the tables leaves PostgreSQL enum
+    // types (e.g. verification_tokens_type_enum) behind, and re-running the
+    // migrations then fails with `type ... already exists`.
+    await dataSource.query('DROP SCHEMA public CASCADE');
+    await dataSource.query('CREATE SCHEMA public');
+    // Migrations rely on uuid_generate_v4(); the extension lived in the
+    // dropped schema, so it must be recreated.
+    await dataSource.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
   });
 
   afterAll(async () => {
