@@ -1,37 +1,45 @@
 ---
 kind: phase
 name: phase-03-videos
-status: dirty
-issue_count: 8
+status: clean
+issue_count: 0
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-11-19T21:20:00-06:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-19T21:06:25-06:00"
+  docs/phases/phase-03-videos/context.md: "2026-11-19T23:27:59-06:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-19T23:27:18-06:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-11-19T20:46:54-06:00"
 issues:
   - id: AMB-1
-    status: open
+    status: resolved
     summary: "Who may read/stream/download a video in Phase 03 (publication is Phase 04)?"
+    resolved_by: phase-03-videos/TD-07
   - id: AMB-2
-    status: open
+    status: resolved
     summary: "Draft title at pre-registration — required input or derived?"
+    resolved_by: clarification
   - id: AMB-3
-    status: open
+    status: resolved
     summary: "Abandoned uploads (draft never completed) — cleanup in scope?"
+    resolved_by: clarification
   - id: AMB-4
-    status: open
+    status: resolved
     summary: "Queue isolation in tests vs the always-running video-worker container"
+    resolved_by: phase-03-videos/TD-09
   - id: MD-1
-    status: open
+    status: resolved
     summary: "No library/image versions pinned for queue, storage SDK, Redis, MinIO"
+    resolved_by: library-refs.md
   - id: MD-2
-    status: open
+    status: resolved
     summary: "Canonical env key set for storage/queue/upload limits not decided"
+    resolved_by: phase-03-videos/TD-09
   - id: DG-1
-    status: open
+    status: resolved
     summary: "Global JWT guard never sets request.user on @Public routes"
+    resolved_by: clarification
   - id: ICC-1
-    status: open
+    status: resolved
     summary: "Testing guide prescribes local-FS storage adapter; TD-03 uses MinIO"
+    resolved_by: clarification
 advisories: []
 ---
 
@@ -45,23 +53,19 @@ _None._
 
 ### Ambiguities
 
-- **AMB-1** — "Reprodução via streaming" and "Download do vídeo pelo usuário" do not say *which* users may read a video, and the publication/visibility rules are explicitly Phase 04 ("Visibilidade do vídeo", "Fluxo de rascunho → publicação"). The project overview says anonymous users watch freely, but a Phase 03 video never becomes "published". Must decide, for `GET` details / stream / download / thumbnail: (a) owner only until Phase 04; (b) anyone holding the unique URL once `status = ready` (unlisted-like), owner sees any status; (c) authenticated users only.
-- **AMB-2** — "Pré-cadastro automático do vídeo como rascunho ao iniciar o upload" — the draft needs a `title`, but editing video information is Phase 04. Is the title a required client input at initiation, or derived (e.g., from the file name)? Which length limit?
-- **AMB-3** — TD-02 notes abandoned multipart uploads leave orphan parts and `draft` rows. No capability or TD says whether cleanup (abort endpoint, storage lifecycle rule, scheduled sweeper) belongs to this phase.
-- **AMB-4** — TD-04 runs a `video-worker` Compose service permanently, and tests share the same Redis/DB (inherited convention: shared `streamtube` DB, `--runInBand`). With one queue name, the long-running container competes with the in-test worker for test jobs, making integration/e2e assertions nondeterministic. Test isolation strategy for the queue is undefined.
+_None._
 
 ### Missing Decisions
 
-- **MD-1** — `## Decisions Index` lists `Libraries: —` for every phase-03 TD, yet TD-01 (BullMQ), TD-02/03/07 (S3 client + presigner), TD-03 (MinIO image) and TD-01 (Redis image) introduce new dependencies. Versions compatible with NestJS 11 / Node 25 must be pinned (and distilled in `library-refs.md`) before planning SIs.
-- **MD-2** — TD-03 names `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_BUCKET` but not credentials/region, the Redis connection keys, or the upload/stream parameters (max size, part size, URL TTLs) from TD-02/TD-07. The env key set is a cross-component contract (Joi schema + `compose.yaml` + `.env.example` + config namespaces) and is undecided.
+_None._
 
 ### Dependency Gaps
 
-- **DG-1** — Inherited convention: the global `JwtAuthGuard` returns early on `@Public()` routes without inspecting the `Authorization` header, so `request.user` is never set there. Any resolution of AMB-1 that lets a public endpoint behave differently for the owner (e.g., owner sees non-ready videos) needs the guard to attach the user optionally. No prior-phase deliverable covers this.
+_None._
 
 ### Inherited Constraint Conflicts
 
-- **ICC-1** — `testing-guide-nestjs-project/references/external-systems.md` prescribes "Object Storage — Local Filesystem … use the local filesystem adapter" for tests, while phase-03-videos/TD-03 fixes S3/MinIO (running in Compose) as the storage and TD-05 requires presigned HTTP URLs that a filesystem adapter cannot produce. The same guide says the queue is real in Docker; storage must follow the same rule or be explicitly overridden.
+_None._
 
 ### Unresolved Open Questions
 
@@ -73,4 +77,13 @@ _None._
 
 ## Resolved Issues
 
-_No issues resolved yet._
+_Revision 1 (dirty, 8 open issues) → `/research` addendum (TD-09) → `/plan-context` re-aggregation → `/plan-resolve` (user answers for AMB-1, AMB-2, AMB-3, ICC-1; Libraries + `library-refs.md`) → revision 2 (clean)._
+
+- **AMB-1** _(resolved_by phase-03-videos/TD-07 — Revision 2026-11-19)_ — User chose "unlisted-like": `GET /videos/:id`, `/stream`, `/download`, `/thumbnail` are `@Public()` and serve `status = ready` videos to anyone holding the unique URL; the owning channel's user (optional bearer token) also sees details of non-ready videos. Publication/visibility stays in Phase 04.
+- **AMB-2** _(resolved_by clarification)_ — User chose "optional, from filename": `title` is optional at initiation (1–100 chars); when omitted it defaults to the uploaded file name without extension, truncated to 100 chars.
+- **AMB-3** _(resolved_by clarification)_ — User chose "defer to a separate task": abandoned-upload cleanup (abort endpoint, `AbortIncompleteMultipartUpload` lifecycle rule, stale-draft sweeper) is out of this phase's capability bullets and is recorded as a follow-up task in the plan's Deliverables notes. No code in Phase 03.
+- **AMB-4** _(resolved_by phase-03-videos/TD-09)_ — Tests isolate the queue through `QUEUE_PREFIX` (TD-09): a Jest setup file overrides it to a test-only prefix, so the long-running `video-worker` container (default prefix) never consumes test jobs and the in-test worker is the sole consumer.
+- **MD-1** _(resolved_by library-refs.md)_ — Libraries pinned on the TDs (`bullmq@^6.7.8`, `@nestjs/bullmq@^12.0.2`, `@aws-sdk/client-s3@^3.1173.0`, `@aws-sdk/s3-request-presigner@^3.1173.0`) and images (`redis:7.4-alpine`, `pgsty/minio:RELEASE.2026-08-04T00-00-00Z`, Debian `ffmpeg` 5.1) distilled in `docs/phases/phase-03-videos/library-refs.md` from Context7.
+- **MD-2** _(resolved_by phase-03-videos/TD-09)_ — New TD-09 (via `/research` addendum) fixes the discrete env key set for the `storage` and `queue` namespaces, including upload/stream limits.
+- **DG-1** _(resolved_by clarification)_ — Follows from AMB-1: `JwtAuthGuard` is extended so that on `@Public()` routes a *valid* bearer token still populates `request.user` (invalid/missing tokens are ignored, never rejected). Planned as an explicit SI with unit + e2e coverage; existing public auth endpoints keep their behavior.
+- **ICC-1** _(resolved_by clarification)_ — User chose "real MinIO in tests": storage integration/e2e tests hit the MinIO Compose service, same rule as the queue. The testing guide's `references/external-systems.md` "Object Storage" section is updated during implementation to document MinIO instead of the local-filesystem adapter.

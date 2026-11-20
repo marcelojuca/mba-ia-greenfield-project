@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-11-19T19:26:53-06:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-19T21:06:25-06:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-19T23:27:18-06:00"
   docs/decisions/technical-decisions-phase-02-auth.md: "2026-11-19T20:46:54-06:00"
   docs/decisions/technical-decisions-phase-01-configuracao-base.md: "2026-11-19T20:46:54-06:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-11-19T20:46:54-06:00"
@@ -50,14 +50,15 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | phase | Backend | Message Queue Technology | decided | A (BullMQ on Redis) | — |
-| phase-03-videos/TD-02 | phase | Cross-layer | Large-File Upload Protocol (up to 10GB) | decided | C (S3 multipart with presigned part URLs) | — |
-| phase-03-videos/TD-03 | phase | Backend | Object Storage Layout and Endpoint Strategy | decided | A (single private bucket, prefixed keys, app-provisioned) | — |
+| phase-03-videos/TD-01 | phase | Backend | Message Queue Technology | decided | A (BullMQ on Redis) | bullmq@^6.7.8, @nestjs/bullmq@^12.0.2 |
+| phase-03-videos/TD-02 | phase | Cross-layer | Large-File Upload Protocol (up to 10GB) | decided | C (S3 multipart with presigned part URLs) | @aws-sdk/client-s3@^3.1173.0, @aws-sdk/s3-request-presigner@^3.1173.0 |
+| phase-03-videos/TD-03 | phase | Backend | Object Storage Layout and Endpoint Strategy | decided | A (single private bucket, prefixed keys, app-provisioned) | @aws-sdk/client-s3@^3.1173.0 |
 | phase-03-videos/TD-04 | phase | Backend | Video Worker Runtime | decided | A (same codebase, separate entrypoint + Compose service) | — |
-| phase-03-videos/TD-05 | phase | Backend | Metadata Extraction and Thumbnail Generation | decided | A (ffprobe/ffmpeg CLI via execFile over presigned URL) | — |
+| phase-03-videos/TD-05 | phase | Backend | Metadata Extraction and Thumbnail Generation | decided | A (ffprobe/ffmpeg CLI via execFile over presigned URL) | — (system ffmpeg 5.1, Debian apt) |
 | phase-03-videos/TD-06 | phase | Backend | Unique Video URL Identifier | decided | B (11-char base64url `public_id`) | — |
-| phase-03-videos/TD-07 | phase | Cross-layer | Streaming and Download Delivery | decided | B (302 to presigned GET URLs) | — |
+| phase-03-videos/TD-07 | phase | Cross-layer | Streaming and Download Delivery | decided | B (302 to presigned GET URLs) | @aws-sdk/s3-request-presigner@^3.1173.0 |
 | phase-03-videos/TD-08 | phase | Backend | Video Status Lifecycle and Failure Handling | decided | A (draft → processing → ready / failed) | — |
+| phase-03-videos/TD-09 | phase | Backend | Environment Variable Contract for Storage, Queue and Upload Limits | decided | A (discrete keys in `storage`/`queue` namespaces) | — |
 | openapi-docs-nestjs/TD-01 | correlated (ad-hoc) | Backend | OpenAPI Documentation Tooling | decided | A (@nestjs/swagger + CLI plugin) | @nestjs/swagger |
 | openapi-docs-nestjs/TD-02 | correlated (ad-hoc) | Backend | OpenAPI Spec Artifact Strategy | decided | C (Runtime UI + exported openapi.json) | — |
 
@@ -70,14 +71,14 @@ _Source files:_
 
 | Capability (from project-plan.md) | Covered by |
 |-----------------------------------|------------|
-| Serviço de armazenamento de arquivos (vídeos e thumbnails) | phase-03-videos/TD-03 |
-| Serviço de processamento em segundo plano (filas) | phase-03-videos/TD-01, phase-03-videos/TD-04, phase-03-videos/TD-08 |
-| Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance | phase-03-videos/TD-02 |
+| Serviço de armazenamento de arquivos (vídeos e thumbnails) | phase-03-videos/TD-03, phase-03-videos/TD-09 |
+| Serviço de processamento em segundo plano (filas) | phase-03-videos/TD-01, phase-03-videos/TD-04, phase-03-videos/TD-08, phase-03-videos/TD-09 |
+| Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance | phase-03-videos/TD-02, phase-03-videos/TD-09 |
 | Pré-cadastro automático do vídeo como rascunho ao iniciar o upload | phase-03-videos/TD-08 |
 | Processamento automático do vídeo após upload (extração de duração e metadados) | phase-03-videos/TD-04, phase-03-videos/TD-05, phase-03-videos/TD-08 |
 | Geração automática de thumbnail a partir de um frame do vídeo | phase-03-videos/TD-04, phase-03-videos/TD-05 |
 | URL única por vídeo, sem conflito com outros vídeos | phase-03-videos/TD-06 |
-| Reprodução via streaming (sem necessidade de download completo) | phase-03-videos/TD-07 |
+| Reprodução via streaming (sem necessidade de download completo) | phase-03-videos/TD-07, phase-03-videos/TD-09 |
 | Download do vídeo pelo usuário | phase-03-videos/TD-07 |
 
 ## Decisions Detail
@@ -85,17 +86,17 @@ _Source files:_
 ### phase-03-videos/TD-01
 
 **Recommendation:** BullMQ + Redis — it is the only option with an official NestJS 11 integration and gives retries/backoff/unrecoverable-failure semantics out of the box, which the failure lifecycle (TD-08) relies on. Redis is a single lightweight container and matches the diagram's separate "Message Queue" container. The dual-write risk (DB commit + enqueue) is handled by the ordering/compensation rule in TD-08 instead of a transactional queue.
-**Libraries:** —
+**Libraries:** bullmq@^6.7.8, @nestjs/bullmq@^12.0.2
 
 ### phase-03-videos/TD-02
 
 **Recommendation:** S3 multipart with presigned part URLs — the only option that both supports 10GB and keeps the API out of the data path. Server-side `ListParts` keeps the client contract minimal. Parameters: max size 10 GiB (10,737,418,240 bytes) declared at initiation and validated; part size 100 MiB, raised to `ceil(size / 10,000)` if needed; part URLs valid for 24h; after completion the API checks the stored object size equals the declared size.
-**Libraries:** —
+**Libraries:** @aws-sdk/client-s3@^3.1173.0, @aws-sdk/s3-request-presigner@^3.1173.0
 
 ### phase-03-videos/TD-03
 
 **Recommendation:** A private single bucket with deterministic, id-based keys (`videos/{videoId}/source`, `thumbnails/{videoId}.jpg`), bucket ensured at startup by API and worker, internal `S3_ENDPOINT` for calls and `S3_PUBLIC_ENDPOINT` for signing client URLs; `forcePathStyle: true` for MinIO.
-**Libraries:** —
+**Libraries:** @aws-sdk/client-s3@^3.1173.0
 
 ### phase-03-videos/TD-04
 
@@ -105,7 +106,7 @@ _Source files:_
 ### phase-03-videos/TD-05
 
 **Recommendation:** System `ffprobe`/`ffmpeg` invoked with `execFile`, reading the source through a presigned URL (HTTP range reads — no full download). Thumbnail at 10% of duration (0 when unknown), JPEG 1280px wide preserving aspect ratio; persisted metadata = duration, width, height, video codec, audio codec (nullable), container format, bit rate, frame rate. A file with no video stream is a permanent failure (TD-08).
-**Libraries:** —
+**Libraries:** — (system ffmpeg 5.1, Debian apt)
 
 ### phase-03-videos/TD-06
 
@@ -115,11 +116,18 @@ _Source files:_
 ### phase-03-videos/TD-07
 
 **Recommendation:** API authorizes and answers `302` to a short-lived (1h) presigned GET URL — inline for `/stream`, `attachment` disposition for `/download`, same mechanism for `/thumbnail`; storage serves `Range`/`206` natively.
-**Libraries:** —
+**Libraries:** @aws-sdk/s3-request-presigner@^3.1173.0
+**Revisions:**
+- 2026-11-19 — Access policy fixed for Phase 03 (validation AMB-1): details, stream, download and thumbnail are `@Public()` for `status = ready`; the owner (optional bearer token) also reads non-ready details. Rationale: Phase 04 owns publication/visibility; the unguessable `public_id` behaves like an unlisted link.
 
 ### phase-03-videos/TD-08
 
 **Recommendation:** Four states (`draft → processing → ready | failed`); 3 attempts with exponential backoff (5s base); no-video-stream media throws `UnrecoverableError`; final failure stores `processing_error`. Commit `processing` first, then enqueue with `jobId = video id`; on enqueue failure revert to `draft`. Worker idempotent (skips videos not in `processing`).
+**Libraries:** —
+
+### phase-03-videos/TD-09
+
+**Recommendation:** Discrete keys mirroring `DB_*`/`MAIL_*`: `storage` namespace (`S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `UPLOAD_MAX_SIZE_BYTES`, `UPLOAD_PART_SIZE_BYTES`, `UPLOAD_URL_EXPIRES_SECONDS`, `DOWNLOAD_URL_EXPIRES_SECONDS`) and `queue` namespace (`REDIS_HOST`, `REDIS_PORT`, `QUEUE_PREFIX`), each validated by Joi; defaults point to Compose service names.
 **Libraries:** —
 
 ### openapi-docs-nestjs/TD-01
@@ -194,7 +202,7 @@ _None._
 | Entity (`*.entity.ts`) | Integration: constraints, defaults, `select: false` |
 | Service with branching + DB | Unit (mocked repo) + Integration (DB contract) |
 | Service with DB only | Integration |
-| Service with side-effect dep (storage, queue) | Integration against the real system (per `references/external-systems.md`: queue = real broker in Docker; storage = local filesystem adapter) |
+| Service with side-effect dep (storage, queue) | Integration against the real system — queue = real Redis/BullMQ, storage = real MinIO from Compose (validation ICC-1 resolution overrides the guide's local-filesystem adapter) |
 | Module with configured imports (`BullModule.registerQueue`, etc.) | Unit: compilation test |
 | Controller | E2E only |
 | DTO | E2E: one validation wiring test per endpoint |

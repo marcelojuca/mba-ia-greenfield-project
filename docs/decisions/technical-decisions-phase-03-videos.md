@@ -47,6 +47,7 @@ _Subprojects in scope:_
 **Recommendation:** **Option A (BullMQ + Redis)** — it is the only option with an official NestJS 11 integration and gives retries/backoff/unrecoverable-failure semantics out of the box, which the failure lifecycle (TD-08) relies on. Redis is a single lightweight container and matches the diagram's separate "Message Queue" container. The dual-write risk (DB commit + enqueue) is handled by the ordering/compensation rule in TD-08 instead of a transactional queue.
 
 **Decision:** A (BullMQ on Redis)
+**Libraries:** bullmq@^6.7.8, @nestjs/bullmq@^12.0.2
 
 ---
 
@@ -83,6 +84,7 @@ _Subprojects in scope:_
 **Recommendation:** **Option C (S3 multipart with presigned part URLs)** — it is the only option that both supports 10GB and keeps the API out of the data path. Server-side `ListParts` keeps the client contract minimal (no CORS `ETag` exposure needed). Parameters: max size 10 GiB (10,737,418,240 bytes) declared at initiation and validated; part size 100 MiB, raised to `ceil(size / 10,000)` if needed (103 parts for 10 GiB); part URLs valid for 24h; after completion the API checks the stored object size equals the declared size. Frontend impact: the future upload screen splits the `File` into `partSize` slices, PUTs each to its URL, then calls the complete endpoint.
 
 **Decision:** C (S3 multipart upload with presigned part URLs)
+**Libraries:** @aws-sdk/client-s3@^3.1173.0, @aws-sdk/s3-request-presigner@^3.1173.0
 
 ---
 
@@ -114,6 +116,7 @@ _Subprojects in scope:_
 **Recommendation:** **Option A** — a private single bucket with deterministic, id-based keys is the simplest layout that keeps drafts private and needs no extra container; the internal/public endpoint split is the minimum needed for presigned URLs to work both inside Docker and from the host. Path-style addressing (`forcePathStyle: true`) is required for MinIO.
 
 **Decision:** A (single private bucket, prefixed keys, app-provisioned, internal/public endpoints)
+**Libraries:** @aws-sdk/client-s3@^3.1173.0
 
 ---
 
@@ -176,6 +179,7 @@ _Subprojects in scope:_
 **Recommendation:** **Option A** — reading via a presigned URL lets FFmpeg seek with HTTP ranges, so processing cost does not scale with file size for metadata/thumbnail work. Parameters: thumbnail frame at 10% of the duration (avoids black intro frames; `0` when duration is unknown), JPEG scaled to 1280px wide preserving aspect ratio; persisted metadata = duration, width, height, video codec, audio codec (nullable), container format, bit rate, frame rate. A file with no video stream is a permanent failure (TD-08).
 
 **Decision:** A (ffprobe/ffmpeg CLI via execFile over presigned URL)
+**Libraries:** — (system `ffmpeg` 5.1 from Debian bookworm apt in `Dockerfile.dev`; Node `child_process`)
 
 ---
 
@@ -238,6 +242,10 @@ _Subprojects in scope:_
 **Recommendation:** **Option B** — redirecting to presigned URLs delivers range-based streaming and downloads with zero API bandwidth, consistent with TD-02. TTL: 1h. Thumbnails use the same mechanism (`/videos/:id/thumbnail`). Frontend impact: use the API URLs directly as `<video src>` / `<img src>` / download `href`.
 
 **Decision:** B (302 redirect to short-lived presigned GET URLs)
+**Libraries:** @aws-sdk/s3-request-presigner@^3.1173.0
+
+**Revisions:**
+- 2026-11-19 — Access policy fixed for Phase 03 (validation AMB-1): video details, stream, download and thumbnail are `@Public()` and served to anyone holding the unique URL once `status = ready`; the channel owner (identified by an optional bearer token) also reads non-ready videos' details. Rationale: Phase 04 owns publication/visibility; until then the unguessable `public_id` (TD-06) behaves like an unlisted link, honoring "anonymous users watch freely".
 
 ---
 
@@ -272,6 +280,32 @@ _Subprojects in scope:_
 
 ---
 
+## TD-09: Environment Variable Contract for Storage, Queue and Upload Limits
+
+**Scope:** Backend
+
+**Capability:** Transversal — covers: Serviço de armazenamento de arquivos (vídeos e thumbnails); Serviço de processamento em segundo plano (filas); Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance; Reprodução via streaming (sem necessidade de download completo)
+
+**Context:** Added after `/plan-validate` (MD-2). The keys are read by the Joi schema (`src/config/env.validation.ts`), the `registerAs` config namespaces, `compose.yaml` (API + worker + MinIO credentials) and `.env.example` — a cross-component contract (phase-01 precedent). TD-03 named only the endpoint/bucket keys.
+
+**Options:**
+
+### Option A: Discrete keys in two new namespaces (`storage`, `queue`) plus upload/stream limits in `storage`
+- `storage`: `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `UPLOAD_MAX_SIZE_BYTES`, `UPLOAD_PART_SIZE_BYTES`, `UPLOAD_URL_EXPIRES_SECONDS`, `DOWNLOAD_URL_EXPIRES_SECONDS`. `queue`: `REDIS_HOST`, `REDIS_PORT`, `QUEUE_PREFIX`. Defaults point to Compose service names (`http://minio:9000`, `redis`).
+- **Pros:** same style as `DB_HOST`/`DB_PORT` and `MAIL_HOST`/`MAIL_PORT`; each value validated individually by Joi (`uri()`, `port()`, numeric bounds); `QUEUE_PREFIX` lets tests isolate their queue.
+- **Cons:** more keys to keep in sync across `.env.example` and Compose.
+
+### Option B: Connection URLs (`REDIS_URL`, `S3_URL` with embedded credentials) + limits as code constants
+- Two URL strings; limits hardcoded in `videos.constants.ts`.
+- **Pros:** fewer keys; URL form common in PaaS.
+- **Cons:** breaks the established discrete-key style; credentials embedded in URLs leak into logs; limits cannot be tuned per environment (e.g., smaller part size in tests).
+
+**Recommendation:** **Option A** — mirrors the existing `DB_*`/`MAIL_*` conventions and lets Joi validate each value, while keeping limits overridable per environment. Defaults: `S3_REGION=us-east-1`, `S3_BUCKET=streamtube`, `UPLOAD_MAX_SIZE_BYTES=10737418240`, `UPLOAD_PART_SIZE_BYTES=104857600`, `UPLOAD_URL_EXPIRES_SECONDS=86400`, `DOWNLOAD_URL_EXPIRES_SECONDS=3600`, `REDIS_PORT=6379`, `QUEUE_PREFIX=streamtube`.
+
+**Decision:** A (discrete keys in `storage` and `queue` namespaces)
+
+---
+
 ## Decisions Summary
 
 | ID | Scope | Decision | Recommendation | Choice |
@@ -284,3 +318,4 @@ _Subprojects in scope:_
 | TD-06 | Backend | Unique Video URL Identifier | 11-char base64url `public_id` | B |
 | TD-07 | Cross-layer | Streaming and Download Delivery | 302 to presigned GET URLs | B |
 | TD-08 | Backend | Video Status Lifecycle and Failure Handling | draft → processing → ready/failed, bounded retries | A |
+| TD-09 | Backend | Environment Variable Contract for Storage, Queue and Upload Limits | Discrete keys in `storage`/`queue` namespaces | A |
