@@ -37,50 +37,32 @@ How each external system is handled in tests. These strategies were confirmed wi
 
 ---
 
-## Object Storage — Local Filesystem
+## Object Storage — Real MinIO (Docker)
 
-**Strategy:** Local filesystem storage in development and tests. S3 in production.
-
-**Approach:**
-- The storage layer should use an abstraction (e.g., `StorageService` interface) that allows switching between local filesystem and S3
-- In tests, use the local filesystem adapter — no mocking needed
-- Use a temporary directory for test uploads: `os.tmpdir()` or a dedicated `test-uploads/` directory
-- Clean up test files in `afterAll`
+**Strategy:** Real S3-compatible storage via the Docker `minio` service (`compose.yaml`), the same way the queue and the database are real. Production swaps MinIO for S3 through env vars only (phase-03-videos/TD-03). There is no local-filesystem adapter: presigned URLs, multipart uploads, `Range`/`206` and ffprobe-over-HTTP cannot be exercised against a filesystem (phase-03-videos validation ICC-1).
 
 **Setup pattern:**
 ```typescript
-// In test module setup
-{
-  provide: 'STORAGE_CONFIG',
-  useValue: {
-    driver: 'local',
-    basePath: path.join(os.tmpdir(), 'streamtube-test-uploads'),
-  },
-}
+const module = await Test.createTestingModule({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true, load: [storageConfig] }),
+    StorageModule,
+  ],
+}).compile();
+await module.init(); // StorageService.onModuleInit ensures the bucket exists
 ```
 
-**Integration test:**
+**Presigned URLs from inside the container:** client-facing URLs are signed for `S3_PUBLIC_ENDPOINT` (`localhost:9000`), unreachable from a container. Use `src/test/presigned-request.ts` — it sends the request to `S3_ENDPOINT` (`minio:9000`) while preserving the signed `Host` header:
+
 ```typescript
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-
-describe('StorageService (integration)', () => {
-  const testDir = path.join(os.tmpdir(), 'streamtube-test-uploads');
-
-  afterAll(() => {
-    fs.rmSync(testDir, { recursive: true, force: true });
-  });
-
-  it('should upload and retrieve a file', async () => {
-    const buffer = Buffer.from('test content');
-    const key = await storageService.upload(buffer, 'test.txt');
-
-    const retrieved = await storageService.get(key);
-    expect(retrieved.toString()).toBe('test content');
-  });
-});
+const url = await storage.presignUploadPart(key, uploadId, 1);
+const res = await presignedRequest(url, { method: 'PUT', body: bytes });
+expect(res.status).toBe(200);
 ```
+
+**Test isolation:**
+- Use unique keys per test (`test/${randomUUID()}/...`) and delete them in `afterAll` (`storage.deleteObject(key)`).
+- URLs signed with `audience: 'internal'` (worker/ffmpeg) are directly reachable from the container with `fetch`.
 
 ---
 

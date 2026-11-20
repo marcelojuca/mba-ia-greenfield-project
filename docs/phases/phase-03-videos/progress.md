@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/15 completed
+**SIs:** 3/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -17,9 +17,12 @@
   - Host port 6379 was already allocated on the dev machine; Redis is exposed only on the Compose network (no host port) since only the API and worker containers use it.
 
 ### SI-03.3 — Storage Module (S3 Client, Multipart and Presigned URLs)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 10/10 passing (storage.service.integration-spec.ts: 9 against real MinIO, storage.module.spec.ts: 1)
+- **Observations:** 
+  - Presigned part uploads work against MinIO with `requestChecksumCalculation: WHEN_REQUIRED` (the library-refs flag is confirmed).
+  - Added `src/test/presigned-request.ts`: sends a host-signed presigned URL to `minio:9000` with the original `Host` header so container tests exercise the exact URL a browser would get.
+  - Testing guide `references/external-systems.md` Object Storage section now documents real MinIO (validation ICC-1).
 
 ### SI-03.4 — Video Entity, Migration and Unique Public Id
 - **Status:** pending
