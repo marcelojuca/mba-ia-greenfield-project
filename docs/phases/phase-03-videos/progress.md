@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/15 completed
+**SIs:** 4/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -25,9 +25,13 @@
   - Testing guide `references/external-systems.md` Object Storage section now documents real MinIO (validation ICC-1).
 
 ### SI-03.4 — Video Entity, Migration and Unique Public Id
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 16/16 SI tests passing (video.entity.integration-spec: 7, public-id.util.spec: 2, migrations.integration-spec: 2 + 5 regression suites re-run); full unit/integration 168/168, e2e 52/52
+- **Observations:** 
+  - Entity uses `@PrimaryGeneratedColumn("uuid")` (entity rule) with the id assigned in code before insert; the integration test proves the explicit id is persisted.
+  - Adding `Channel#videos` broke `AppModule` bootstrap (openapi-export test) because no module registered `Video` via `forFeature` — created the owning `VideosModule` shell with `TypeOrmModule.forFeature([Video])` and registered it in `AppModule` now (the plan had that registration in SI-03.7/SI-03.8).
+  - Every test DataSource listing `Channel` now also lists `Video` (10 spec files), and `cleanAllTables` deletes `videos` first.
+  - Generated migration `1795153056068-CreateVideos` reviewed: enum type, unique `public_id`, `channel_id` index, FK `ON DELETE CASCADE`.
 
 ### SI-03.5 — Optional Requester Identity on Public Routes
 - **Status:** pending
