@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 13/15 completed
+**SIs:** 14/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -107,9 +107,11 @@
   - Videos e2e now deletes the stored objects of every video before wiping tables (`deleteStoredVideoObjects`).
 
 ### SI-03.14 — End-to-End Upload → Processing → Streaming Pipeline
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 3/3 passing (video-pipeline.e2e-spec.ts over real PostgreSQL, MinIO, Redis, ffmpeg and an in-process WorkerModule): ~8 MB H.264 upload in 2 presigned parts → ready with 640×360/h264/aac metadata, thumbnail JPEG, stream Range 206 on the last KiB, byte-identical download; corrupt upload → failed after 1 attempt; two uploads → two unique URLs. Full e2e 76/76
+- **Observations:** 
+  - Part size overridden to 5 MiB (S3 minimum) in this suite only, so a real multi-part upload runs in ~1s; a CBR `bitrate` option was added to the ffmpeg fixture to produce a >5 MiB video.
+  - The in-test worker consumes the `streamtube-test` prefix; the `video-worker` container (runtime prefix) never touches these jobs (validation AMB-4).
 
 ### SI-03.15 — Documentation: OpenAPI Export, HTTP Examples and CLAUDE.md
 - **Status:** pending

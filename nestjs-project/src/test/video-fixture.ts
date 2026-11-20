@@ -12,6 +12,8 @@ export interface VideoFixtureOptions {
   width?: number;
   height?: number;
   withAudio?: boolean;
+  /** Constant video bitrate (e.g. '16M') to produce larger, multi-part files. */
+  bitrate?: string;
 }
 
 /**
@@ -26,6 +28,7 @@ export async function createVideoFixture(
     width = 320,
     height = 240,
     withAudio = true,
+    bitrate,
   } = options;
   const out = join(tmpdir(), `fixture-${randomUUID()}.mp4`);
   const args = [
@@ -43,6 +46,20 @@ export async function createVideoFixture(
     'libx264',
     '-pix_fmt',
     'yuv420p',
+    ...(bitrate
+      ? [
+          '-b:v',
+          bitrate,
+          '-minrate',
+          bitrate,
+          '-maxrate',
+          bitrate,
+          '-bufsize',
+          bitrate,
+          '-x264-params',
+          'nal-hrd=cbr',
+        ]
+      : []),
     ...(withAudio ? ['-c:a', 'aac', '-shortest'] : []),
     '-movflags',
     '+faststart',
