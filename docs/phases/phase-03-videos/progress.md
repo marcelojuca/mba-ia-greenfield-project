@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/15 completed
+**SIs:** 5/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -34,9 +34,11 @@
   - Generated migration `1795153056068-CreateVideos` reviewed: enum type, unique `public_id`, `channel_id` index, FK `ON DELETE CASCADE`.
 
 ### SI-03.5 — Optional Requester Identity on Public Routes
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 8/8 passing (jwt-auth.guard.spec.ts: 3 new public-route cases); regression auth.e2e-spec.ts 45/45
+- **Observations:** 
+  - Guard refactored into `extractBearerToken`/`verifyOrUndefined` helpers so public and protected paths share token parsing; protected-route behavior unchanged (verified by the existing auth e2e suite).
+  - E2E coverage of `@OptionalUser()` comes with the video read endpoints (SI-03.13).
 
 ### SI-03.6 — Queue Foundation and Video Processing Producer
 - **Status:** pending

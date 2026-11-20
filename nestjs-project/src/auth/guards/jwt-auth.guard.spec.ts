@@ -48,8 +48,44 @@ describe('JwtAuthGuard', () => {
 
   it('bypasses guard on @Public() routes', async () => {
     mockReflector.getAllAndOverride.mockReturnValue(true);
-    const ctx = makeContext({ headers: {} });
-    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    const request: Record<string, unknown> = { headers: {} };
+    await expect(guard.canActivate(makeContext(request))).resolves.toBe(true);
+    expect(request.user).toBeUndefined();
+  });
+
+  it('attaches the payload on @Public() routes when a valid token is sent', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(true);
+    const token = jwtService.sign({ sub: 'owner-1', email: 'o@example.com' });
+    const request: Record<string, unknown> = {
+      headers: { authorization: `Bearer ${token}` },
+    };
+
+    await expect(guard.canActivate(makeContext(request))).resolves.toBe(true);
+    expect((request.user as Record<string, unknown>)?.sub).toBe('owner-1');
+  });
+
+  it('lets @Public() routes through without a user when the token is invalid', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(true);
+    const request: Record<string, unknown> = {
+      headers: { authorization: 'Bearer not-a-valid-jwt' },
+    };
+
+    await expect(guard.canActivate(makeContext(request))).resolves.toBe(true);
+    expect(request.user).toBeUndefined();
+  });
+
+  it('lets @Public() routes through without a user when the token is expired', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(true);
+    const expired = jwtService.sign(
+      { sub: 'owner-1', email: 'o@example.com' },
+      { expiresIn: -60 },
+    );
+    const request: Record<string, unknown> = {
+      headers: { authorization: `Bearer ${expired}` },
+    };
+
+    await expect(guard.canActivate(makeContext(request))).resolves.toBe(true);
+    expect(request.user).toBeUndefined();
   });
 
   it('passes with a valid JWT and attaches payload to request.user', async () => {
