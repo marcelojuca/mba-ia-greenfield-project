@@ -665,21 +665,21 @@ Linearized implementation order: SI-03.1 → SI-03.2 → SI-03.3 → SI-03.4 →
 
 ## Deliverables
 
-- [ ] SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
-- [ ] SI-03.2 — Docker Compose Infrastructure: Object Storage, Queue Broker and FFmpeg
-- [ ] SI-03.3 — Storage Module (S3 Client, Multipart and Presigned URLs)
-- [ ] SI-03.4 — Video Entity, Migration and Unique Public Id
-- [ ] SI-03.5 — Optional Requester Identity on Public Routes
-- [ ] SI-03.6 — Queue Foundation and Video Processing Producer
-- [ ] SI-03.7 — Video Upload Initiation Service (Draft Pre-registration)
-- [ ] SI-03.8 — Endpoint POST /videos (Start Upload)
-- [ ] SI-03.9 — Upload Completion and Processing Hand-off
-- [ ] SI-03.10 — Media Probe Service (ffprobe / ffmpeg)
-- [ ] SI-03.11 — Video Processing Service and Queue Processor
-- [ ] SI-03.12 — Video Worker Entrypoint and Compose Service
-- [ ] SI-03.13 — Read, Stream, Download and Thumbnail Endpoints
-- [ ] SI-03.14 — End-to-End Upload → Processing → Streaming Pipeline
-- [ ] SI-03.15 — Documentation: OpenAPI Export, HTTP Examples and CLAUDE.md
+- [x] SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
+- [x] SI-03.2 — Docker Compose Infrastructure: Object Storage, Queue Broker and FFmpeg
+- [x] SI-03.3 — Storage Module (S3 Client, Multipart and Presigned URLs)
+- [x] SI-03.4 — Video Entity, Migration and Unique Public Id
+- [x] SI-03.5 — Optional Requester Identity on Public Routes
+- [x] SI-03.6 — Queue Foundation and Video Processing Producer
+- [x] SI-03.7 — Video Upload Initiation Service (Draft Pre-registration)
+- [x] SI-03.8 — Endpoint POST /videos (Start Upload)
+- [x] SI-03.9 — Upload Completion and Processing Hand-off
+- [x] SI-03.10 — Media Probe Service (ffprobe / ffmpeg)
+- [x] SI-03.11 — Video Processing Service and Queue Processor
+- [x] SI-03.12 — Video Worker Entrypoint and Compose Service
+- [x] SI-03.13 — Read, Stream, Download and Thumbnail Endpoints
+- [x] SI-03.14 — End-to-End Upload → Processing → Streaming Pipeline
+- [x] SI-03.15 — Documentation: OpenAPI Export, HTTP Examples and CLAUDE.md
 
 **Phase deliverables (project-plan.md):** upload de até 10GB funcional · processamento automático do vídeo · streaming funcionando · URLs únicas geradas.
 
@@ -687,8 +687,8 @@ Linearized implementation order: SI-03.1 → SI-03.2 → SI-03.3 → SI-03.4 →
 
 **Full test suites:**
 
-- [ ] Backend tests pass (`docker compose exec nestjs-api npm test -- --runInBand`)
-- [ ] E2E tests pass (`docker compose exec nestjs-api npm run test:e2e -- --runInBand`)
-- [ ] Type/compilation checks pass (`docker compose exec nestjs-api npx tsc --noEmit`)
-- [ ] Lint passes (`docker compose exec nestjs-api npm run lint`)
-- [ ] Project builds successfully (`docker compose exec nestjs-api npm run build`)
+- [x] Backend tests pass (`docker compose exec nestjs-api npm test -- --runInBand`)
+- [x] E2E tests pass (`docker compose exec nestjs-api npm run test:e2e -- --runInBand`)
+- [x] Type/compilation checks pass (`docker compose exec nestjs-api npx tsc --noEmit`)
+- [x] Lint passes (`docker compose exec nestjs-api npm run lint`)
+- [x] Project builds successfully (`docker compose exec nestjs-api npm run build`)

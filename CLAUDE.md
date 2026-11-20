@@ -10,9 +10,9 @@ More info in the project overview: [docs/project-plan.md](docs/project-plan.md)
 
 This is a monorepo with two main areas:
 
-- `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express). Contains modules for users, channels, videos, comments, etc.
-- `docs/` — Project documentation, architecture diagrams, and planning.
-- `next-frontend/` (Next.js) — not yet initialized
+- `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express). Domain modules: `auth`, `users`, `channels`, `mail`, `storage`, `videos`, `video-processing` (plus `common`, `config`, `database`, `queue`, `swagger`). Has two entrypoints: the HTTP API (`src/main.ts`) and the video worker (`src/worker.ts`). Details in `nestjs-project/CLAUDE.md`.
+- `docs/` — Project documentation, architecture diagrams, and planning (`docs/decisions/`, `docs/phases/`).
+- `next-frontend/` (Next.js) — frontend; currently covers the Phase 02 auth screens (no video UI yet).
 
 ## Architecture (C4 Container Diagram)
 
@@ -20,11 +20,15 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 
 - **Frontend** (Next.js) → calls API via REST, streams from Object Storage
 - **API** (Nest.js) → business rules, auth, reads/writes DB, uploads to storage, publishes jobs to queue, sends emails
-- **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
-- **Database** (PostgreSQL) → users, channels, videos, comments, likes
-- **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage — implemented as `video-worker` (NestJS application context, `nestjs-project/src/worker.ts`)
+- **Database** (PostgreSQL) → users, channels, videos (comments and likes in later phases)
+- **Object Storage** (S3/MinIO) → video files and thumbnails — `minio` service locally; clients upload/stream directly via presigned URLs
+- **Message Queue** (BullMQ on Redis) → video processing job queue `video-processing` — `redis` service
 - **Email Service** (SMTP) → account confirmation and password recovery
+
+## Video Upload & Processing (Phase 03)
+
+Large files never pass through the API: `POST /videos` returns presigned S3 multipart part URLs, the client uploads straight to object storage, and `POST /videos/:id/upload/complete` hands the video to the queue. The worker extracts duration/metadata with `ffprobe`, renders a thumbnail with `ffmpeg`, and sets the status (`draft → processing → ready | failed`). Streaming/download/thumbnail endpoints redirect (302) to short-lived presigned URLs; storage serves `Range` requests (206). Decisions: `docs/decisions/technical-decisions-phase-03-videos.md`; plan and progress: `docs/phases/phase-03-videos/`.
 
 ## Docker Networking
 

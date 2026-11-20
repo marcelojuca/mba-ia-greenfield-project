@@ -4,8 +4,8 @@ name: phase-03-videos
 status: clean
 issue_count: 0
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-11-19T23:27:59-06:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-19T23:27:18-06:00"
+  docs/phases/phase-03-videos/context.md: "2026-11-19T23:42:34-06:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-19T23:42:34-06:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-11-19T20:46:54-06:00"
 issues:
   - id: AMB-1
@@ -78,6 +78,8 @@ _None._
 ## Resolved Issues
 
 _Revision 1 (dirty, 8 open issues) → `/research` addendum (TD-09) → `/plan-context` re-aggregation → `/plan-resolve` (user answers for AMB-1, AMB-2, AMB-3, ICC-1; Libraries + `library-refs.md`) → revision 2 (clean)._
+
+_Revision 3 (clean) — re-validated after the implementation-time TD-01 revisions (`@nestjs/bullmq` pinned to `^11.0.5` because 12.x is ESM-only; `ioredis` added as BullMQ 6 optional peer). Same Option A, library parameters only; no check fires (no IC/ICC against inherited conventions, capability coverage unchanged)._
 
 - **AMB-1** _(resolved_by phase-03-videos/TD-07 — Revision 2026-11-19)_ — User chose "unlisted-like": `GET /videos/:id`, `/stream`, `/download`, `/thumbnail` are `@Public()` and serve `status = ready` videos to anyone holding the unique URL; the owning channel's user (optional bearer token) also sees details of non-ready videos. Publication/visibility stays in Phase 04.
 - **AMB-2** _(resolved_by clarification)_ — User chose "optional, from filename": `title` is optional at initiation (1–100 chars); when omitted it defaults to the uploaded file name without extension, truncated to 100 chars.

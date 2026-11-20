@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
-**Status:** in_progress
-**SIs:** 14/15 completed
+**Status:** completed
+**SIs:** 15/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -114,6 +114,25 @@
   - The in-test worker consumes the `streamtube-test` prefix; the `video-worker` container (runtime prefix) never touches these jobs (validation AMB-4).
 
 ### SI-03.15 — Documentation: OpenAPI Export, HTTP Examples and CLAUDE.md
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 10/10 passing (openapi-export.integration-spec.ts: new case asserting the 6 /videos operations); every path cited in both CLAUDE.md files verified to exist
+- **Observations:** 
+  - Root CLAUDE.md had statements contradicted by the code (a `comments` module, `next-frontend/` "not yet initialized", queue "TBD"); corrected alongside the new video section. `docs/diagrams/software-arch.mermaid` queue label updated from TBD to BullMQ on Redis and storage relations to presigned URLs.
+  - nestjs-project/CLAUDE.md documents the new services, readiness checks, worker commands, Phase 03 modules/endpoints/env keys, test helpers, library pins and the entity-graph pitfall found in SI-03.12.
+
+## Final verification
+
+- `docker compose exec nestjs-api npm test` — 40 suites, 250/250 passing
+- `docker compose exec nestjs-api npm run test:e2e` — 5 suites, 76/76 passing
+- `docker compose exec nestjs-api npx tsc --noEmit` — exit 0
+- `docker compose exec nestjs-api npm run lint` — exit 0, 0 errors, 0 warnings (test-file override now also disables `no-unsafe-argument`, same rationale as the other `no-unsafe-*` rules: supertest bodies are `any`)
+- `docker compose exec nestjs-api npm run build` — exit 0; emits `dist/main.js` and `dist/worker.js`
+- `docker compose ps` — `db`, `mailpit`, `minio` (healthy), `redis` (healthy), `nestjs-api`, `video-worker` up
+
+## Follow-ups (out of scope)
+
+- Cleanup of abandoned uploads: abort endpoint and/or storage lifecycle rule `AbortIncompleteMultipartUpload` + stale `draft` sweeper (validation AMB-3).
+- `.env.example` keeps the unquoted `MAIL_FROM` with angle brackets that CLAUDE.md warns about (SI-03.1).
+- `ChannelsService` still has a private copy of the unique-violation check now available in `src/common/database/pg-errors.ts` (SI-03.7).
+- Pre-existing `*.module.spec.ts` files open real DB connections; CLAUDE.md says such tests should be `*.integration-spec.ts` (SI-03.7).
+- Video UI (upload screen with part uploads, player) in `next-frontend/` — the API contract is fixed by TD-02/TD-07.
