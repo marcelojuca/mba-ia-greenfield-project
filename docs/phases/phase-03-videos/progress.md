@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/15 completed
+**SIs:** 2/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -11,9 +11,10 @@
   - Out of scope: `.env.example` keeps the pre-existing unquoted `MAIL_FROM="StreamTube" <noreply@streamtube.com>` that CLAUDE.md warns breaks shell/Compose parsing; the local `.env` uses the quoted form. Suggest a separate fix task.
 
 ### SI-03.2 — Docker Compose Infrastructure: Object Storage, Queue Broker and FFmpeg
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** no tests — verified manually: minio + redis healthy, `ffprobe -version` 5.1.9 in nestjs-api, MinIO console http://localhost:9001 → 200, redis maxmemory-policy=noeviction
+- **Observations:** 
+  - Host port 6379 was already allocated on the dev machine; Redis is exposed only on the Compose network (no host port) since only the API and worker containers use it.
 
 ### SI-03.3 — Storage Module (S3 Client, Multipart and Presigned URLs)
 - **Status:** pending
