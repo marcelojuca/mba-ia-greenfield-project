@@ -1,14 +1,18 @@
 import { randomBytes } from 'node:crypto';
+import { getQueueToken } from '@nestjs/bullmq';
 import { TestingModule } from '@nestjs/testing';
+import { Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
 import { StorageService } from '../storage/storage.service';
 import { cleanAllTables } from '../test/create-test-data-source';
-import { presignedRequest } from '../test/presigned-request';
+import { presignedRequest, uploadFileToParts } from '../test/presigned-request';
 import {
   createChannelOwner,
   createVideoTestingModule,
 } from '../test/video-test-module';
 import { Video, VideoStatus } from './entities/video.entity';
+import { VideoProcessingProducer } from './video-processing.producer';
+import { VIDEO_PROCESSING_QUEUE } from './videos.constants';
 import { VideosModule } from './videos.module';
 import { VideosService } from './videos.service';
 
@@ -18,6 +22,7 @@ describe('VideosService (integration — PostgreSQL + MinIO + Redis)', () => {
   let service: VideosService;
   let storage: StorageService;
   let videos: Repository<Video>;
+  let queue: Queue;
   let owner: { userId: string; channelId: string };
 
   beforeAll(async () => {
@@ -26,9 +31,11 @@ describe('VideosService (integration — PostgreSQL + MinIO + Redis)', () => {
     service = module.get(VideosService);
     storage = module.get(StorageService);
     videos = dataSource.getRepository(Video);
+    queue = module.get(getQueueToken(VIDEO_PROCESSING_QUEUE));
   });
 
   afterAll(async () => {
+    await queue.obliterate({ force: true });
     await cleanAllTables(dataSource);
     await module.close();
   });
@@ -36,6 +43,7 @@ describe('VideosService (integration — PostgreSQL + MinIO + Redis)', () => {
   beforeEach(async () => {
     await cleanAllTables(dataSource);
     owner = await createChannelOwner(dataSource);
+    await queue.obliterate({ force: true });
   });
 
   describe('initiateUpload', () => {
@@ -101,6 +109,94 @@ describe('VideosService (integration — PostgreSQL + MinIO + Redis)', () => {
           s.video.upload_id!,
         );
       }
+    });
+  });
+  describe('completeUpload', () => {
+    async function uploadDraft(file: Buffer) {
+      const session = await service.initiateUpload(owner.userId, {
+        fileName: 'clip.mp4',
+        fileSize: file.length,
+        contentType: 'video/mp4',
+      });
+      return session;
+    }
+
+    it('assembles the object, moves the video to processing and enqueues a job', async () => {
+      const file = randomBytes(4096);
+      const session = await uploadDraft(file);
+      await uploadFileToParts(session.parts, session.partSize, file);
+
+      const video = await service.completeUpload(
+        owner.userId,
+        session.video.public_id,
+      );
+
+      expect(video.status).toBe(VideoStatus.PROCESSING);
+      const saved = await videos.findOneByOrFail({ id: video.id });
+      expect(saved.status).toBe(VideoStatus.PROCESSING);
+      expect(saved.upload_id).toBeNull();
+      await expect(storage.headObject(saved.storage_key)).resolves.toEqual({
+        size: 4096,
+      });
+      const job = await queue.getJob(video.id);
+      expect(job?.data).toEqual({ videoId: video.id });
+      await storage.deleteObject(saved.storage_key);
+    });
+
+    it('keeps the draft when not every part was uploaded', async () => {
+      const session = await uploadDraft(randomBytes(64));
+
+      await expect(
+        service.completeUpload(owner.userId, session.video.public_id),
+      ).rejects.toMatchObject({ errorCode: 'UPLOAD_INCOMPLETE' });
+
+      const saved = await videos.findOneByOrFail({ id: session.video.id });
+      expect(saved.status).toBe(VideoStatus.DRAFT);
+      expect(saved.upload_id).toBe(session.video.upload_id);
+      await storage.abortMultipartUpload(saved.storage_key, saved.upload_id!);
+    });
+
+    it('reverts to draft when the queue rejects the job, and a retry succeeds', async () => {
+      const file = randomBytes(2048);
+      const session = await uploadDraft(file);
+      await uploadFileToParts(session.parts, session.partSize, file);
+      const producer = module.get(VideoProcessingProducer);
+      jest
+        .spyOn(producer, 'enqueue')
+        .mockRejectedValueOnce(new Error('queue unavailable'));
+
+      await expect(
+        service.completeUpload(owner.userId, session.video.public_id),
+      ).rejects.toThrow('queue unavailable');
+      const reverted = await videos.findOneByOrFail({ id: session.video.id });
+      expect(reverted.status).toBe(VideoStatus.DRAFT);
+
+      const retried = await service.completeUpload(
+        owner.userId,
+        session.video.public_id,
+      );
+      expect(retried.status).toBe(VideoStatus.PROCESSING);
+      await expect(queue.getJob(session.video.id)).resolves.toBeDefined();
+      await storage.deleteObject(session.video.storage_key);
+    });
+
+    it('fails the video when the stored size differs from the declared size', async () => {
+      const session = await uploadDraft(randomBytes(1000));
+      // The client sends more bytes than declared — presigned parts cannot cap size.
+      await uploadFileToParts(
+        session.parts,
+        session.partSize,
+        randomBytes(1500),
+      );
+
+      await expect(
+        service.completeUpload(owner.userId, session.video.public_id),
+      ).rejects.toMatchObject({ errorCode: 'UPLOAD_SIZE_MISMATCH' });
+
+      const saved = await videos.findOneByOrFail({ id: session.video.id });
+      expect(saved.status).toBe(VideoStatus.FAILED);
+      expect(saved.processing_error).toContain('does not match');
+      await expect(storage.headObject(saved.storage_key)).resolves.toBeNull();
     });
   });
 });

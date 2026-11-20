@@ -61,3 +61,29 @@ export async function presignedRequest(
     req.end();
   });
 }
+
+/**
+ * Uploads `file` the way a client would: slice `partSize` bytes per part and
+ * PUT each slice to its presigned URL. Returns the ETags of the parts.
+ */
+export async function uploadFileToParts(
+  parts: { partNumber: number; url: string }[],
+  partSize: number,
+  file: Buffer,
+): Promise<string[]> {
+  const etags: string[] = [];
+  for (const part of parts) {
+    const start = (part.partNumber - 1) * partSize;
+    const res = await presignedRequest(part.url, {
+      method: 'PUT',
+      body: file.subarray(start, start + partSize),
+    });
+    if (res.status !== 200) {
+      throw new Error(
+        `Part ${part.partNumber} upload failed with ${res.status}: ${res.body.toString()}`,
+      );
+    }
+    etags.push(String(res.headers.etag));
+  }
+  return etags;
+}

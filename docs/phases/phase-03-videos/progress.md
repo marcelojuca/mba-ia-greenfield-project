@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/15 completed
+**SIs:** 9/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -64,9 +64,13 @@
   - Shared e2e helpers in `test/helpers/e2e-app.ts`: `createE2eApp()` (mirrors main.ts pipes/filters) and `createConfirmedUser()` (register → confirm → login; clears throttler storage because auth endpoints are limited to 10 req/min).
 
 ### SI-03.9 — Upload Completion and Processing Hand-off
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 29 SI tests passing (videos.service.spec: 10 new completeUpload unit cases; videos.service.integration-spec: 4 new against PostgreSQL+MinIO+Redis incl. compensation; videos.e2e-spec: 5 new); src/videos 42/42, videos e2e 11/11
+- **Observations:** 
+  - Completion validates the uploaded parts themselves (contiguous from 1, total ≥ declared size) instead of recomputing the expected part count from the current `UPLOAD_PART_SIZE_BYTES`, so a config change between initiate and complete cannot break in-flight uploads.
+  - S3 `EntityTooSmall`/`InvalidPart`/`InvalidPartOrder` on completion are mapped to `UPLOAD_INCOMPLETE` (the multipart upload stays open for the client to fix).
+  - Commit is a conditional update (`WHERE status = draft`); `affected = 0` → `VIDEO_NOT_DRAFT`, covering concurrent completions.
+  - Retry after compensation reuses the already-assembled object (`headObject` first), proven by the integration test.
 
 ### SI-03.10 — Media Probe Service (ffprobe / ffmpeg)
 - **Status:** pending

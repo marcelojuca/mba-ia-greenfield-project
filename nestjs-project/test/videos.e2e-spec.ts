@@ -1,11 +1,17 @@
 import { randomBytes } from 'node:crypto';
+import { getQueueToken } from '@nestjs/bullmq';
 import { INestApplication } from '@nestjs/common';
+import { Queue } from 'bullmq';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { cleanAllTables } from '../src/test/create-test-data-source';
-import { presignedRequest } from '../src/test/presigned-request';
+import {
+  presignedRequest,
+  uploadFileToParts,
+} from '../src/test/presigned-request';
 import { Video, VideoStatus } from '../src/videos/entities/video.entity';
+import { VIDEO_PROCESSING_QUEUE } from '../src/videos/videos.constants';
 import {
   createConfirmedUser,
   createE2eApp,
@@ -16,19 +22,23 @@ describe('Videos (e2e)', () => {
   let app: INestApplication<App>;
   let dataSource: DataSource;
   let owner: TestUser;
+  let queue: Queue;
 
   beforeAll(async () => {
     app = await createE2eApp();
     dataSource = app.get(DataSource);
+    queue = app.get(getQueueToken(VIDEO_PROCESSING_QUEUE));
   });
 
   afterAll(async () => {
+    await queue.obliterate({ force: true });
     await cleanAllTables(dataSource);
     await app.close();
   });
 
   beforeEach(async () => {
     await cleanAllTables(dataSource);
+    await queue.obliterate({ force: true });
     owner = await createConfirmedUser(app);
   });
 
@@ -111,6 +121,73 @@ describe('Videos (e2e)', () => {
       await request(app.getHttpServer())
         .post('/videos')
         .send({ fileName: 'a.mp4', fileSize: 1, contentType: 'video/mp4' })
+        .expect(401);
+    });
+  });
+  describe('POST /videos/:id/upload/complete', () => {
+    async function uploadAll(user: TestUser, file: Buffer) {
+      const res = await startUpload(user, {
+        fileName: 'clip.mp4',
+        fileSize: file.length,
+        contentType: 'video/mp4',
+      }).expect(201);
+      await uploadFileToParts(
+        res.body.upload.parts,
+        res.body.upload.partSize,
+        file,
+      );
+      return res.body.id as string;
+    }
+
+    const complete = (user: TestUser, id: string) =>
+      request(app.getHttpServer())
+        .post(`/videos/${id}/upload/complete`)
+        .set('Authorization', `Bearer ${user.accessToken}`);
+
+    it('returns 202 with the video in processing', async () => {
+      const id = await uploadAll(owner, randomBytes(2048));
+
+      const res = await complete(owner, id).expect(202);
+
+      expect(res.body).toMatchObject({
+        id,
+        status: 'processing',
+        sizeBytes: 2048,
+        originalFilename: 'clip.mp4',
+        streamUrl: null,
+        channel: { nickname: expect.any(String) },
+      });
+    });
+
+    it('returns 400 UPLOAD_INCOMPLETE before the parts are uploaded', async () => {
+      const start = await startUpload(owner).expect(201);
+
+      const res = await complete(owner, start.body.id).expect(400);
+
+      expect(res.body.error).toBe('UPLOAD_INCOMPLETE');
+    });
+
+    it('returns 404 VIDEO_NOT_FOUND for another user video', async () => {
+      const id = await uploadAll(owner, randomBytes(512));
+      const intruder = await createConfirmedUser(app);
+
+      const res = await complete(intruder, id).expect(404);
+
+      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+    });
+
+    it('returns 409 VIDEO_NOT_DRAFT when completed twice', async () => {
+      const id = await uploadAll(owner, randomBytes(512));
+      await complete(owner, id).expect(202);
+
+      const res = await complete(owner, id).expect(409);
+
+      expect(res.body.error).toBe('VIDEO_NOT_DRAFT');
+    });
+
+    it('returns 401 without an access token', async () => {
+      await request(app.getHttpServer())
+        .post('/videos/abcdefghijk/upload/complete')
         .expect(401);
     });
   });

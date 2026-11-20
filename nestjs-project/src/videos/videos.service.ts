@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { S3ServiceException } from '@aws-sdk/client-s3';
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -6,12 +7,17 @@ import { Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
 import { isUniqueViolationOn } from '../common/database/pg-errors';
 import storageConfig from '../config/storage.config';
-import { StorageService } from '../storage/storage.service';
+import { StorageService, type UploadedPart } from '../storage/storage.service';
 import { Video, VideoStatus } from './entities/video.entity';
 import { generatePublicId } from './public-id.util';
 import { planUploadParts } from './upload-part-plan.util';
+import { VideoProcessingProducer } from './video-processing.producer';
 import {
   ChannelNotFoundException,
+  UploadIncompleteException,
+  UploadSizeMismatchException,
+  VideoNotDraftException,
+  VideoNotFoundException,
   VideoTooLargeException,
 } from './videos.exceptions';
 import {
@@ -42,6 +48,7 @@ export class VideosService {
     private readonly videoRepository: Repository<Video>,
     private readonly channelsService: ChannelsService,
     private readonly storageService: StorageService,
+    private readonly processingProducer: VideoProcessingProducer,
     @Inject(storageConfig.KEY)
     private readonly storageCfg: ConfigType<typeof storageConfig>,
   ) {}
@@ -103,6 +110,124 @@ export class VideosService {
         );
       }
       await this.videoRepository.delete({ id: video.id });
+      throw err;
+    }
+  }
+
+  /**
+   * Finalizes the direct upload and hands the video to the worker
+   * (phase-03-videos/TD-02, TD-08): verify parts → complete multipart →
+   * verify size → commit `processing` → enqueue (compensate on failure).
+   */
+  async completeUpload(userId: string, publicId: string): Promise<Video> {
+    const video = await this.findOwnedOrFail(publicId, userId);
+    if (video.status !== VideoStatus.DRAFT) throw new VideoNotDraftException();
+
+    await this.finalizeStoredObject(video);
+
+    const committed = await this.videoRepository.update(
+      { id: video.id, status: VideoStatus.DRAFT },
+      { status: VideoStatus.PROCESSING, upload_id: null },
+    );
+    if (!committed.affected) throw new VideoNotDraftException();
+
+    try {
+      await this.processingProducer.enqueue(video.id);
+    } catch (err) {
+      // Compensation: the job never reached the queue — back to draft so the
+      // client can retry completion (the stored object is reused).
+      await this.videoRepository.update(
+        { id: video.id, status: VideoStatus.PROCESSING },
+        { status: VideoStatus.DRAFT },
+      );
+      throw err;
+    }
+
+    video.status = VideoStatus.PROCESSING;
+    video.upload_id = null;
+    return video;
+  }
+
+  /** Loads a video with its channel; non-owners get VIDEO_NOT_FOUND (no leak). */
+  private async findOwnedOrFail(
+    publicId: string,
+    userId: string,
+  ): Promise<Video> {
+    const video = await this.videoRepository.findOne({
+      where: { public_id: publicId },
+      relations: { channel: true },
+    });
+    if (!video || video.channel.user_id !== userId) {
+      throw new VideoNotFoundException();
+    }
+    return video;
+  }
+
+  /**
+   * Makes sure the source object exists with exactly the declared size.
+   * Idempotent: when a previous completion already assembled the object
+   * (e.g. enqueue failed and was compensated) it is reused as-is.
+   */
+  private async finalizeStoredObject(video: Video): Promise<void> {
+    let stored = await this.storageService.headObject(video.storage_key);
+
+    if (!stored) {
+      if (!video.upload_id) throw new UploadIncompleteException();
+      const parts = await this.storageService.listUploadedParts(
+        video.storage_key,
+        video.upload_id,
+      );
+      if (!this.coversDeclaredSize(parts, video.size_bytes)) {
+        throw new UploadIncompleteException();
+      }
+      await this.completeMultipart(video, parts);
+      stored = await this.storageService.headObject(video.storage_key);
+    }
+
+    if (stored?.size !== video.size_bytes) {
+      await this.storageService.deleteObject(video.storage_key);
+      await this.videoRepository.update(
+        { id: video.id },
+        {
+          status: VideoStatus.FAILED,
+          upload_id: null,
+          processing_error: `Uploaded size (${stored?.size ?? 0} bytes) does not match the declared size (${video.size_bytes} bytes)`,
+        },
+      );
+      throw new UploadSizeMismatchException();
+    }
+  }
+
+  /** Parts must be numbered 1..N without gaps and add up to the declared size. */
+  private coversDeclaredSize(
+    parts: UploadedPart[],
+    sizeBytes: number,
+  ): boolean {
+    if (parts.length === 0) return false;
+    const contiguous = parts.every((p, i) => p.partNumber === i + 1);
+    const total = parts.reduce((sum, p) => sum + p.size, 0);
+    return contiguous && total >= sizeBytes;
+  }
+
+  private async completeMultipart(
+    video: Video,
+    parts: UploadedPart[],
+  ): Promise<void> {
+    try {
+      await this.storageService.completeMultipartUpload(
+        video.storage_key,
+        video.upload_id!,
+        parts,
+      );
+    } catch (err) {
+      // Malformed part set (e.g. a non-final part under 5 MiB): the upload is
+      // still open, so the client can re-send parts and retry.
+      if (
+        err instanceof S3ServiceException &&
+        ['EntityTooSmall', 'InvalidPart', 'InvalidPartOrder'].includes(err.name)
+      ) {
+        throw new UploadIncompleteException();
+      }
       throw err;
     }
   }

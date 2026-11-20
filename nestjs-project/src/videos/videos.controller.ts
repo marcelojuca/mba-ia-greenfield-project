@@ -1,4 +1,11 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -12,6 +19,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { UploadSessionDto } from './dto/upload-session.dto';
+import { VideoResponseDto } from './dto/video-response.dto';
 import { VideoPresenter } from './video.presenter';
 import { VideosService } from './videos.service';
 
@@ -62,5 +70,53 @@ export class VideosController {
   ): Promise<UploadSessionDto> {
     const session = await this.videosService.initiateUpload(user.sub, dto);
     return this.presenter.toUploadSession(session);
+  }
+
+  @Post(':id/upload/complete')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Complete a video upload',
+    description:
+      'Assembles the parts uploaded to object storage, checks the stored size and queues the video ' +
+      'for background processing (duration, metadata, thumbnail). Returns the video in `processing`.',
+  })
+  @ApiResponse({
+    status: 202,
+    description: 'Upload completed; processing queued',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'UPLOAD_INCOMPLETE — not every part was uploaded',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'VIDEO_NOT_FOUND — unknown video or owned by another channel',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'VIDEO_NOT_DRAFT — upload already completed',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'UPLOAD_SIZE_MISMATCH — stored size differs from the declared size (video marked failed)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async completeUpload(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ): Promise<VideoResponseDto> {
+    const video = await this.videosService.completeUpload(user.sub, id);
+    return this.presenter.toVideo(video, true);
   }
 }
