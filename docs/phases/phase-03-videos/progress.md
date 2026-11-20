@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/15 completed
+**SIs:** 7/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -49,9 +49,12 @@
   - `QueueModule` imported in `AppModule` (root BullMQ connection for the API producer).
 
 ### SI-03.7 — Video Upload Initiation Service (Draft Pre-registration)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 16/16 SI tests passing (upload-part-plan.util.spec: 4, videos.service.spec: 8 unit, videos.service.integration-spec: 3 against PostgreSQL+MinIO+Redis, videos.module.integration-spec: 1); src/videos + src/channels 53/53
+- **Observations:** 
+  - Module compile test named `videos.module.integration-spec.ts` (plan said `.spec.ts`): it needs real DB/Redis/MinIO connections, and nestjs-project/CLAUDE.md requires the integration suffix for anything that opens a connection.
+  - Added `src/common/database/pg-errors.ts` (`isUniqueViolationOn`) for the public_id retry; `ChannelsService` keeps its private copy of the same check — consolidating it is a cosmetic refactor left out of scope.
+  - Added `src/test/video-test-module.ts` (`createVideoTestingModule`, `createChannelOwner`) reused by every video integration spec.
 
 ### SI-03.8 — Endpoint POST /videos (Start Upload)
 - **Status:** pending
