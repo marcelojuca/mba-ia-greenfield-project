@@ -17,6 +17,25 @@ services:
       redis:
         condition: service_healthy
 
+  # Video worker (phase-03-videos/TD-04): same image/code as the API, runs
+  # src/worker.ts (no HTTP) and consumes the video-processing queue.
+  # Requires `docker compose exec nestjs-api npm install` on first setup.
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["npm", "run", "start:worker:dev"]
+    restart: unless-stopped
+    volumes:
+      - .:/home/node/app
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   db:
     image: postgres:17
     ports:

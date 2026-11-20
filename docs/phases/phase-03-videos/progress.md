@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 11/15 completed
+**SIs:** 12/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -89,9 +89,13 @@
   - Module compile test named `.integration-spec.ts` (it opens DB/Redis/MinIO connections and starts a worker), consistent with SI-03.7.
 
 ### SI-03.12 — Video Worker Entrypoint and Compose Service
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 3/3 passing (worker.module.integration-spec.ts: real createApplicationContext — entity graph, running BullMQ worker, no HTTP adapter); full npm test 237/237, npm run test:e2e 63/63; live check: video-worker container logs 'Video worker started', a job enqueued while it was stopped stayed waiting and was consumed after restart
+- **Observations:** 
+  - The worker crashed at boot with `Entity metadata for Channel#user was not found`: `autoLoadEntities` only sees entities registered by imported modules, so `WorkerModule` imports `UsersModule` to complete the Video → Channel → User graph. Integration tests had not caught it because test DataSources list entities explicitly — the new WorkerModule test boots the real module.
+  - Root setup extracted into `src/config/config-module.options.ts` and `src/database/database.module.ts`, now shared by `AppModule` and `WorkerModule`.
+  - Worker dev build uses `tsconfig.worker.json` (`outDir: dist-worker`) so its `nest start --watch` never deletes the API dist/; `dist-worker` is git-ignored and excluded from `tsconfig.json`.
+  - Running the full e2e suite exposed that `npm run test:e2e` was NOT serialized (contrary to CLAUDE.md: suites ran in parallel workers and hit FK violations). Added `maxWorkers: 1` to both Jest configs so plain `npm test` / `npm run test:e2e` are serial by construction.
 
 ### SI-03.13 — Read, Stream, Download and Thumbnail Endpoints
 - **Status:** pending
