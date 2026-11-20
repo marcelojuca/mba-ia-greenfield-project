@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/15 completed
+**SIs:** 6/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -41,9 +41,12 @@
   - E2E coverage of `@OptionalUser()` comes with the video read endpoints (SI-03.13).
 
 ### SI-03.6 — Queue Foundation and Video Processing Producer
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 4/4 passing (video-processing.producer.integration-spec.ts: 3 against real Redis, queue.module.spec.ts: 1); e2e regression 52/52
+- **Observations:** 
+  - `@nestjs/bullmq@12` (and `@nestjs/bull-shared@12`) are ESM-only and fail under ts-jest/CommonJS (`SyntaxError: Unexpected token export`). Pinned `@nestjs/bullmq@^11.0.5` (CommonJS, peers bullmq ^6 + Nest 11) and recorded a `**Revisions:**` entry on TD-01, propagated to context.md, library-refs.md and the plan.
+  - `test/jest-e2e.json` has `rootDir: test`, so the setup file is referenced as `<rootDir>/../src/test/jest-setup-env.ts`.
+  - `QueueModule` imported in `AppModule` (root BullMQ connection for the API producer).
 
 ### SI-03.7 — Video Upload Initiation Service (Draft Pre-registration)
 - **Status:** pending

@@ -50,7 +50,7 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | phase | Backend | Message Queue Technology | decided | A (BullMQ on Redis) | bullmq@^6.7.8, @nestjs/bullmq@^12.0.2 |
+| phase-03-videos/TD-01 | phase | Backend | Message Queue Technology | decided | A (BullMQ on Redis) | bullmq@^6.7.8, @nestjs/bullmq@^11.0.5, ioredis@^5.11.1 |
 | phase-03-videos/TD-02 | phase | Cross-layer | Large-File Upload Protocol (up to 10GB) | decided | C (S3 multipart with presigned part URLs) | @aws-sdk/client-s3@^3.1173.0, @aws-sdk/s3-request-presigner@^3.1173.0 |
 | phase-03-videos/TD-03 | phase | Backend | Object Storage Layout and Endpoint Strategy | decided | A (single private bucket, prefixed keys, app-provisioned) | @aws-sdk/client-s3@^3.1173.0 |
 | phase-03-videos/TD-04 | phase | Backend | Video Worker Runtime | decided | A (same codebase, separate entrypoint + Compose service) | — |
@@ -86,7 +86,9 @@ _Source files:_
 ### phase-03-videos/TD-01
 
 **Recommendation:** BullMQ + Redis — it is the only option with an official NestJS 11 integration and gives retries/backoff/unrecoverable-failure semantics out of the box, which the failure lifecycle (TD-08) relies on. Redis is a single lightweight container and matches the diagram's separate "Message Queue" container. The dual-write risk (DB commit + enqueue) is handled by the ordering/compensation rule in TD-08 instead of a transactional queue.
-**Libraries:** bullmq@^6.7.8, @nestjs/bullmq@^12.0.2
+**Libraries:** bullmq@^6.7.8, @nestjs/bullmq@^11.0.5, ioredis@^5.11.1
+**Revisions:**
+- 2026-11-20 — `@nestjs/bullmq` pinned to `^11.0.5` instead of `^12.0.2` (same Option A). Rationale: `@nestjs/bullmq@12` and `@nestjs/bull-shared@12` ship as ESM-only (`"type": "module"`) and cannot be loaded by the project's CommonJS + ts-jest toolchain (`SyntaxError: Unexpected token 'export'`, found in SI-03.6); `11.0.5` is CommonJS and declares peers `bullmq ^6` and `@nestjs/core ^11`.
 
 ### phase-03-videos/TD-02
 

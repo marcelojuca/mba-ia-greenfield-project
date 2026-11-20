@@ -47,7 +47,11 @@ _Subprojects in scope:_
 **Recommendation:** **Option A (BullMQ + Redis)** — it is the only option with an official NestJS 11 integration and gives retries/backoff/unrecoverable-failure semantics out of the box, which the failure lifecycle (TD-08) relies on. Redis is a single lightweight container and matches the diagram's separate "Message Queue" container. The dual-write risk (DB commit + enqueue) is handled by the ordering/compensation rule in TD-08 instead of a transactional queue.
 
 **Decision:** A (BullMQ on Redis)
-**Libraries:** bullmq@^6.7.8, @nestjs/bullmq@^12.0.2
+**Libraries:** bullmq@^6.7.8, @nestjs/bullmq@^11.0.5, ioredis@^5.11.1
+
+**Revisions:**
+- 2026-11-20 — `@nestjs/bullmq` pinned to `^11.0.5` instead of `^12.0.2` (same Option A). Rationale: `@nestjs/bullmq@12` and `@nestjs/bull-shared@12` ship as ESM-only (`"type": "module"`) and cannot be loaded by the project's CommonJS + ts-jest toolchain (`SyntaxError: Unexpected token 'export'`, found in SI-03.6); `11.0.5` is CommonJS and declares peers `bullmq ^6` and `@nestjs/core ^11`.
+- 2026-11-20 — `ioredis@^5.11.1` added. Rationale: `bullmq@6` loads `ioredis` lazily as an optional peer; it must be installed explicitly to connect with `{ host, port }` options (found in SI-03.1).
 
 ---
 

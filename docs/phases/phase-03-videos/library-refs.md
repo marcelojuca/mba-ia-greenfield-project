@@ -5,9 +5,13 @@ libs:
     context7_id: "/taskforcesh/bullmq"
     fetched_at: "2026-11-19T23:27:22-06:00"
   "@nestjs/bullmq":
-    version: "^12.0.2"
+    version: "^11.0.5"
     context7_id: "/nestjs/bull"
     fetched_at: "2026-11-19T23:27:22-06:00"
+  ioredis:
+    version: "^5.11.1"
+    context7_id: "/taskforcesh/bullmq"
+    fetched_at: "2026-11-20T00:10:00-06:00"
   "@aws-sdk/client-s3":
     version: "^3.1173.0"
     context7_id: "/aws/aws-sdk-js-v3"
@@ -63,7 +67,7 @@ Workers need a connection with `maxRetriesPerRequest: null` (BullMQ sets it for 
 
 ## @nestjs/bullmq
 
-**Source:** `/nestjs/bull` (Context7, trust 9.7). Peer: `bullmq ^3||^4||^5||^6`, `@nestjs/common|core ^10||^11||^12`.
+**Source:** `/nestjs/bull` (Context7, trust 9.7). **Pinned to `^11.0.5`** (TD-01 revision): `12.x` is ESM-only and breaks the CommonJS/ts-jest toolchain; `11.0.5` is CommonJS with peers `bullmq ^3||^4||^5||^6`, `@nestjs/common|core ^10||^11`. The API below is identical in both majors.
 
 ```typescript
 BullModule.forRootAsync({

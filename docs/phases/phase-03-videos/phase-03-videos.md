@@ -25,7 +25,7 @@ Deliver video upload of up to 10GB straight to S3-compatible object storage (the
 
 **Technical actions:**
 
-1. Install `bullmq@^6.7.8`, `@nestjs/bullmq@^12.0.2`, `@aws-sdk/client-s3@^3.1173.0`, `@aws-sdk/s3-request-presigner@^3.1173.0` in `nestjs-project` (per `phase-03-videos/TD-01`, `TD-02`, `library-refs.md`)
+1. Install `bullmq@^6.7.8`, `@nestjs/bullmq@^11.0.5` (TD-01 revision — 12.x is ESM-only), `ioredis@^5.11.1`, `@aws-sdk/client-s3@^3.1173.0`, `@aws-sdk/s3-request-presigner@^3.1173.0` in `nestjs-project` (per `phase-03-videos/TD-01`, `TD-02`, `library-refs.md`)
 2. Create `src/config/storage.config.ts` — `registerAs('storage', ...)` with `endpoint`, `publicEndpoint`, `region`, `accessKey`, `secretKey`, `bucket`, `uploadMaxSizeBytes`, `uploadPartSizeBytes`, `uploadUrlExpiresSeconds`, `downloadUrlExpiresSeconds` (per `phase-03-videos/TD-09`)
 3. Create `src/config/queue.config.ts` — `registerAs('queue', ...)` with `host`, `port`, `prefix` (per `phase-03-videos/TD-09`)
 4. Extend `src/config/env.validation.ts` with the TD-09 keys (`S3_*` URIs/strings, `UPLOAD_PART_SIZE_BYTES` ≥ 5 MiB, `UPLOAD_MAX_SIZE_BYTES` ≤ 5 TiB, TTLs ≤ 604800, `REDIS_PORT` port) and register both namespaces in `AppModule`'s `ConfigModule.forRoot({ load })`
