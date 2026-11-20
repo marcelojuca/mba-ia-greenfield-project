@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 10/15 completed
+**SIs:** 11/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -81,9 +81,12 @@
   - Corrupt fixture uses plain text instead of random bytes to keep the test deterministic.
 
 ### SI-03.11 — Video Processing Service and Queue Processor
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 20 SI tests passing (video-processing.service.spec: 11 unit, video-processing.processor.spec: 4 unit, video-processing.service.integration-spec: 4 with PostgreSQL+MinIO+ffmpeg, video-processing.module.integration-spec: 1); src/video-processing 29/29
+- **Observations:** 
+  - The final-attempt decision (`attemptsMade >= attempts` or `UnrecoverableError`) lives in `VideoProcessingService.handleFailure`; the processor only delegates (layer-separation rule) and its `failed` handler logs instead of rethrowing (background-task rule).
+  - `markReady`/`markFailed` are conditional updates on `status = processing`, so redelivered or stale jobs never regress a video.
+  - Module compile test named `.integration-spec.ts` (it opens DB/Redis/MinIO connections and starts a worker), consistent with SI-03.7.
 
 ### SI-03.12 — Video Worker Entrypoint and Compose Service
 - **Status:** pending

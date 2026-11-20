@@ -8,7 +8,11 @@ import { ChannelsService } from '../channels/channels.service';
 import { isUniqueViolationOn } from '../common/database/pg-errors';
 import storageConfig from '../config/storage.config';
 import { StorageService, type UploadedPart } from '../storage/storage.service';
-import { Video, VideoStatus } from './entities/video.entity';
+import {
+  Video,
+  type VideoMetadata,
+  VideoStatus,
+} from './entities/video.entity';
 import { generatePublicId } from './public-id.util';
 import { planUploadParts } from './upload-part-plan.util';
 import { VideoProcessingProducer } from './video-processing.producer';
@@ -31,6 +35,12 @@ export interface InitiateUploadInput {
   fileSize: number;
   contentType: string;
   title?: string;
+}
+
+export interface ProcessingResult {
+  durationSeconds: number | null;
+  metadata: VideoMetadata;
+  thumbnailKey: string;
 }
 
 export interface UploadSession {
@@ -146,6 +156,38 @@ export class VideosService {
     video.status = VideoStatus.PROCESSING;
     video.upload_id = null;
     return video;
+  }
+
+  async findById(id: string): Promise<Video | null> {
+    return this.videoRepository.findOneBy({ id });
+  }
+
+  /**
+   * Worker success transition `processing → ready` (phase-03-videos/TD-08).
+   * Conditional on `processing` so redelivered jobs cannot regress a video.
+   */
+  async markReady(id: string, result: ProcessingResult): Promise<boolean> {
+    const { affected } = await this.videoRepository.update(
+      { id, status: VideoStatus.PROCESSING },
+      {
+        status: VideoStatus.READY,
+        duration_seconds: result.durationSeconds,
+        metadata: result.metadata,
+        thumbnail_key: result.thumbnailKey,
+        processing_error: null,
+        processed_at: new Date(),
+      },
+    );
+    return Boolean(affected);
+  }
+
+  /** Worker failure transition `processing → failed` (phase-03-videos/TD-08). */
+  async markFailed(id: string, reason: string): Promise<boolean> {
+    const { affected } = await this.videoRepository.update(
+      { id, status: VideoStatus.PROCESSING },
+      { status: VideoStatus.FAILED, processing_error: reason.slice(0, 2000) },
+    );
+    return Boolean(affected);
   }
 
   /** Loads a video with its channel; non-owners get VIDEO_NOT_FOUND (no leak). */
