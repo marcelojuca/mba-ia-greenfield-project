@@ -57,6 +57,8 @@ A job is definitively failed when `job.attemptsMade >= (job.opts.attempts ?? 1)`
 
 ### Connections and prefix
 
+**v6 driver note (found at install time, SI-03.1):** `bullmq@6` no longer depends on `ioredis`; it is an *optional peer* loaded lazily ("BullMQ could not load the optional 'ioredis' package. Install it with `npm install ioredis`, or provide a different Redis client"). Since the project connects with plain `{ host, port }` options, `ioredis@^5.11.1` is installed explicitly alongside `bullmq`.
+
 Workers need a connection with `maxRetriesPerRequest: null` (BullMQ sets it for connections it creates from options). The Redis key `prefix` (default `bull`) namespaces queues: "All components accessing the same queue must use the same prefix" — used to isolate test queues (`QUEUE_PREFIX`, TD-09). `queue.obliterate({ force: true })` wipes a queue (tests only).
 
 ## @nestjs/bullmq
