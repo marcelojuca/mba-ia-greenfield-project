@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/15 completed
+**SIs:** 10/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -73,9 +73,12 @@
   - Retry after compensation reuses the already-assembled object (`headObject` first), proven by the integration test.
 
 ### SI-03.10 — Media Probe Service (ffprobe / ffmpeg)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 9/9 passing (media-probe.parser.spec: 4 unit; media-probe.service.integration-spec: 5 with real ffprobe/ffmpeg over presigned MinIO URLs) — stable across 2 runs
+- **Observations:** 
+  - Corrupt sources do not reach the no-video-stream branch: ffprobe exits 1 (`Invalid data found when processing input` / `moov atom not found`). `MediaProbeService` raises `InvalidMediaError` for those so the worker can fail without retries (TD-05/TD-08 intent: undecodable media is permanent).
+  - Errors are classified by exclusion: only network/HTTP/timeout failures are transient; every other failure on fetched bytes is `InvalidMediaError` (decode messages vary by demuxer — random bytes are sometimes sniffed as MP3 with `Invalid argument`).
+  - Corrupt fixture uses plain text instead of random bytes to keep the test deterministic.
 
 ### SI-03.11 — Video Processing Service and Queue Processor
 - **Status:** pending
