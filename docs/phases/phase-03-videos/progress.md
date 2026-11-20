@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/15 completed
+**SIs:** 8/15 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces and Env Contract
 - **Status:** completed
@@ -57,9 +57,11 @@
   - Added `src/test/video-test-module.ts` (`createVideoTestingModule`, `createChannelOwner`) reused by every video integration spec.
 
 ### SI-03.8 — Endpoint POST /videos (Start Upload)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 6/6 passing (videos.e2e-spec.ts — POST /videos: 201 contract, direct PUT to storage, 400 VALIDATION_ERROR, 400 VIDEO_TOO_LARGE, exactly 10 GiB → 103 part URLs, 401)
+- **Observations:** 
+  - Response mapping lives in `VideoPresenter` (owner-only fields, unique URL from `APP_URL`) so the controller stays a thin delegate.
+  - Shared e2e helpers in `test/helpers/e2e-app.ts`: `createE2eApp()` (mirrors main.ts pipes/filters) and `createConfirmedUser()` (register → confirm → login; clears throttler storage because auth endpoints are limited to 10 req/min).
 
 ### SI-03.9 — Upload Completion and Processing Hand-off
 - **Status:** pending
