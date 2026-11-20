@@ -128,4 +128,20 @@ describe('exportSpec (integration)', () => {
       }
     }
   });
+
+  it('documents the video endpoints of phase 03', () => {
+    const paths = document.paths as Record<string, Record<string, unknown>>;
+    expect(Object.keys(paths['/videos'])).toEqual(['post']);
+    expect(Object.keys(paths['/videos/{id}/upload/complete'])).toEqual([
+      'post',
+    ]);
+    for (const path of [
+      '/videos/{id}',
+      '/videos/{id}/stream',
+      '/videos/{id}/download',
+      '/videos/{id}/thumbnail',
+    ]) {
+      expect(Object.keys(paths[path])).toEqual(['get']);
+    }
+  });
 });

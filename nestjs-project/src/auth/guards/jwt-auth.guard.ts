@@ -22,25 +22,40 @@ export class JwtAuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-    if (isPublic) return true;
-
     const request = context
       .switchToHttp()
-      .getRequest<{ headers: Record<string, string>; user: unknown }>();
-    const authHeader = request.headers?.authorization;
+      .getRequest<{ headers: Record<string, string>; user?: JwtPayload }>();
+    const token = this.extractBearerToken(request.headers);
 
-    if (!authHeader || !authHeader.startsWith(BEARER_PREFIX)) {
-      throw new UnauthorizedException();
+    if (isPublic) {
+      // Public routes never reject, but still identify a caller presenting a
+      // valid token (e.g. a channel owner reading their own draft video).
+      if (token) request.user = await this.verifyOrUndefined(token);
+      return true;
     }
 
-    const token = authHeader.slice(BEARER_PREFIX.length);
+    if (!token) throw new UnauthorizedException();
+    const payload = await this.verifyOrUndefined(token);
+    if (!payload) throw new UnauthorizedException();
+    request.user = payload;
+    return true;
+  }
 
+  private extractBearerToken(
+    headers: Record<string, string> | undefined,
+  ): string | undefined {
+    const authHeader = headers?.authorization;
+    if (!authHeader || !authHeader.startsWith(BEARER_PREFIX)) return undefined;
+    return authHeader.slice(BEARER_PREFIX.length);
+  }
+
+  private async verifyOrUndefined(
+    token: string,
+  ): Promise<JwtPayload | undefined> {
     try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
-      request.user = payload;
-      return true;
+      return await this.jwtService.verifyAsync<JwtPayload>(token);
     } catch {
-      throw new UnauthorizedException();
+      return undefined;
     }
   }
 }
